@@ -30,6 +30,7 @@ import com.novell.ldapchai.exception.ChaiOperationException;
 import com.novell.ldapchai.exception.ChaiUnavailableException;
 import com.novell.ldapchai.exception.ChaiValidationException;
 import com.novell.ldapchai.provider.ChaiProvider;
+
 import password.pwm.AppProperty;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
@@ -82,7 +83,9 @@ import password.pwm.ws.client.rest.naaf.PwmNAAFVerificationMethod;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
+
 import java.io.IOException;
+import java.text.DateFormat;
 import java.util.*;
 
 /**
@@ -257,6 +260,10 @@ public class ForgottenPasswordServlet extends AbstractPwmServlet {
                     this.executeUnlock(pwmRequest);
                 } else if ("resetPassword".equalsIgnoreCase(choice)) {
                     this.executeResetPassword(pwmRequest);
+                } else if ("unlockApplication".equalsIgnoreCase(choice)) {
+                    this.executeUnlockApplication(pwmRequest);
+                } else if ("resetApplicationToInitialPassword".equalsIgnoreCase(choice)) {
+                    this.executeResetApplicationToInitialPassword(pwmRequest);
                 }
             }
         }
@@ -762,6 +769,11 @@ public class ForgottenPasswordServlet extends AbstractPwmServlet {
             return;
         }
 
+        if (recoveryAction == RecoveryAction.APPLICATION) {
+        	pwmRequest.forwardToJsp(PwmConstants.JSP_URL.RECOVER_PASSWORD_APPLICATION_CHOICE);
+            return;
+        }
+        
         if (forgottenPasswordProfile.readSettingAsBoolean(PwmSetting.RECOVERY_ALLOW_UNLOCK)) {
             final PasswordStatus passwordStatus = forgottenPasswordBean.getUserInfo().getPasswordState();
 
@@ -801,6 +813,46 @@ public class ForgottenPasswordServlet extends AbstractPwmServlet {
         } catch (ChaiOperationException e) {
             final String errorMsg = "unable to unlock user " + userIdentity + " error: " + e.getMessage();
             final ErrorInformation errorInformation = new ErrorInformation(PwmError.ERROR_UNLOCK_FAILURE,errorMsg);
+            LOGGER.error(pwmSession, errorInformation.toDebugStr());
+            pwmRequest.respondWithError(errorInformation, true);
+        } finally {
+            clearForgottenPasswordBean(pwmRequest);
+        }
+    }
+
+
+    private void executeUnlockApplication(final PwmRequest pwmRequest)
+            throws IOException, ServletException, ChaiUnavailableException, PwmUnrecoverableException
+    {
+        final PwmApplication pwmApplication = pwmRequest.getPwmApplication();
+        final PwmSession pwmSession = pwmRequest.getPwmSession();
+        final ForgottenPasswordBean forgottenPasswordBean = forgottenPasswordBean(pwmRequest);
+        final ForgottenPasswordProfile forgottenPasswordProfile = pwmRequest.getConfig().getForgottenPasswordProfiles().get(forgottenPasswordBean.getForgottenPasswordProfileID());
+        final UserIdentity userIdentity = forgottenPasswordBean.getUserInfo().getUserIdentity();
+
+        try {
+        	// execute configured actions
+            final ChaiUser proxiedUser = pwmRequest.getPwmApplication().getProxiedChaiUser(userIdentity);
+            LOGGER.debug(pwmSession, "executing unlock application configured actions to user " + proxiedUser.getEntryDN());
+            final List<ActionConfiguration> configValues = forgottenPasswordProfile.readSettingAsAction(PwmSetting.RECOVERY_UNLOCK_APPLICATION_ACTIONS);
+            final ActionExecutor actionExecutor = new ActionExecutor.ActionExecutorSettings(pwmRequest.getPwmApplication(),userIdentity)
+                    .setMacroMachine(pwmSession.getSessionManager().getMacroMachine(pwmRequest.getPwmApplication()))
+                    .setExpandPwmMacros(true)
+                    .createActionExecutor();
+
+            actionExecutor.executeActions(configValues, pwmSession);
+
+            // mark the event log
+            pwmApplication.getAuditManager().submit(AuditEvent.UNLOCK_APPLICATION, forgottenPasswordBean.getUserInfo(),pwmSession);
+
+            pwmRequest.getPwmResponse().forwardToSuccessPage(Message.Success_UnlockApplication);
+        } catch (PwmOperationalException e) {
+            final ErrorInformation errorInformation = new ErrorInformation(PwmError.ERROR_UNKNOWN, e.getErrorInformation().getDetailedErrorMsg(), e.getErrorInformation().getFieldValues());
+            LOGGER.error(pwmSession, errorInformation.toDebugStr());
+            pwmRequest.respondWithError(errorInformation, true);
+        } catch (ChaiUnavailableException e) {
+            final String errorMsg = "unable to unlock application for user " + userIdentity + " error: " + e.getMessage();
+            final ErrorInformation errorInformation = new ErrorInformation(PwmError.ERROR_UNLOCK_APPLICATION_FAILURE,errorMsg);
             LOGGER.error(pwmSession, errorInformation.toDebugStr());
             pwmRequest.respondWithError(errorInformation, true);
         } finally {
@@ -864,6 +916,46 @@ public class ForgottenPasswordServlet extends AbstractPwmServlet {
         }
     }
 
+    
+    private void executeResetApplicationToInitialPassword(final PwmRequest pwmRequest)
+            throws IOException, ServletException, ChaiUnavailableException, PwmUnrecoverableException
+    {
+        final PwmApplication pwmApplication = pwmRequest.getPwmApplication();
+        final PwmSession pwmSession = pwmRequest.getPwmSession();
+        final ForgottenPasswordBean forgottenPasswordBean = forgottenPasswordBean(pwmRequest);
+        final ForgottenPasswordProfile forgottenPasswordProfile = pwmRequest.getConfig().getForgottenPasswordProfiles().get(forgottenPasswordBean.getForgottenPasswordProfileID());
+        final UserIdentity userIdentity = forgottenPasswordBean.getUserInfo().getUserIdentity();
+
+        try {
+        	// execute configured actions
+            final ChaiUser proxiedUser = pwmRequest.getPwmApplication().getProxiedChaiUser(userIdentity);
+            LOGGER.debug(pwmSession, "executing ResetApplicationToInitialPassword configured actions to user " + proxiedUser.getEntryDN());
+            final List<ActionConfiguration> configValues = forgottenPasswordProfile.readSettingAsAction(PwmSetting.RECOVERY_RESET_APPLICATION_TO_INITIAL_PASSWORD);
+            final ActionExecutor actionExecutor = new ActionExecutor.ActionExecutorSettings(pwmRequest.getPwmApplication(),userIdentity)
+                    .setMacroMachine(pwmSession.getSessionManager().getMacroMachine(pwmRequest.getPwmApplication()))
+                    .setExpandPwmMacros(true)
+                    .createActionExecutor();
+
+            actionExecutor.executeActions(configValues, pwmSession);
+
+            // mark the event log
+            pwmApplication.getAuditManager().submit(AuditEvent.RESET_APPLICATION_TO_INITIAL_PASSWORD, forgottenPasswordBean.getUserInfo(),pwmSession);
+
+            pwmRequest.getPwmResponse().forwardToSuccessPage(Message.Success_ResetApplicationToInitialPassword);
+        } catch (PwmOperationalException e) {
+            final ErrorInformation errorInformation = new ErrorInformation(PwmError.ERROR_UNKNOWN, e.getErrorInformation().getDetailedErrorMsg(), e.getErrorInformation().getFieldValues());
+            LOGGER.error(pwmSession, errorInformation.toDebugStr());
+            pwmRequest.respondWithError(errorInformation, true);
+        } catch (ChaiUnavailableException e) {
+            final String errorMsg = "unable to reset application to initial password for user " + userIdentity + " error: " + e.getMessage();
+            final ErrorInformation errorInformation = new ErrorInformation(PwmError.ERROR_RESET_APPLICATION_TO_INITIAL_PASSWORD,errorMsg);
+            LOGGER.error(pwmSession, errorInformation.toDebugStr());
+            pwmRequest.respondWithError(errorInformation, true);
+        } finally {
+            clearForgottenPasswordBean(pwmRequest);
+        }
+    }
+    
     private void processSendNewPassword(final PwmRequest pwmRequest)
             throws ChaiUnavailableException, IOException, ServletException, PwmUnrecoverableException
     {

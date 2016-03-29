@@ -1449,7 +1449,9 @@
             <value>AGREEMENT_PASSED</value>
             <value>CHANGE_PASSWORD</value>
             <value>UNLOCK_PASSWORD</value>
+            <value>UNLOCK_APPLICATION</value>
             <value>RECOVER_PASSWORD</value>
+            <value>RESET_APPLICATION_TO_INITIAL_PASSWORD</value>
             <value>SET_RESPONSES</value>
             <value>SET_OTP_SECRET</value>
             <value>ACTIVATE_USER</value>
@@ -1476,7 +1478,9 @@
             <option value="AGREEMENT_PASSED">Agreement Passed</option>
             <option value="CHANGE_PASSWORD">Change Password</option>
             <option value="UNLOCK_PASSWORD">Unlock Password</option>
+            <option value="UNLOCK_APPLICATION">Unlock Application</option>
             <option value="RECOVER_PASSWORD">Recover Password</option>
+            <option value="RESET_APPLICATION_TO_INITIAL_PASSWORD">Reset Application To Initial Password</option>
             <option value="SET_RESPONSES">Set Responses</option>
             <option value="SET_OTP_SECRET">Set OTP</option>
             <option value="ACTIVATE_USER">Activate User</option>
@@ -2172,6 +2176,7 @@
             <option value="RESETPW">Allow user to set new password</option>
             <option value="SENDNEWPW">Send new password</option>
             <option value="SENDNEWPW_AND_EXPIRE">Send new password and mark as expired</option>
+            <option value="APPLICATION">Unlock application password or reset it to initial value</option>
         </options>
     </setting>
     <setting hidden="false" key="recovery.sendNewPassword.sendMethod" level="2">
@@ -2191,6 +2196,17 @@
             <value/>
         </default>
     </setting>
+    <setting hidden="false" key="recovery.unlockApplicationActions" level="2">
+        <default>
+            <value/>
+        </default>
+    </setting>
+    <setting hidden="false" key="recovery.resetApplicationToInitialPassword" level="2">
+        <default>
+            <value/>
+        </default>
+    </setting>
+    
     <setting hidden="false" key="recovery.allowWhenLocked" level="2">
         <default>
             <value>false</value>

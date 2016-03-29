@@ -26,4 +26,5 @@ public enum RecoveryAction implements ConfigurationOption {
     RESETPW,
     SENDNEWPW,
     SENDNEWPW_AND_EXPIRE,
+    APPLICATION,
 }

@@ -182,6 +182,10 @@ public enum PwmError {
 
     ERROR_HTTP_404(                 5300, "Error_HTTP_404",                 null),
 
+    // custom
+    ERROR_UNLOCK_APPLICATION_FAILURE(           15046, "Error_Unlock_Application_Failure",           null),
+    ERROR_RESET_APPLICATION_TO_INITIAL_PASSWORD(           15047, "Reset_Application_To_Initial_Password",           null),
+
     ;
 
     enum ErrorFlag {

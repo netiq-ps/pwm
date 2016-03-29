@@ -685,6 +685,10 @@ public enum PwmSetting {
             "challenge.requiredAttributes", PwmSettingSyntax.FORM, PwmSettingCategory.RECOVERY_PROFILE),
     RECOVERY_ALLOW_WHEN_LOCKED(
             "recovery.allowWhenLocked", PwmSettingSyntax.BOOLEAN, PwmSettingCategory.RECOVERY_PROFILE),
+    RECOVERY_UNLOCK_APPLICATION_ACTIONS(
+            "recovery.unlockApplicationActions", PwmSettingSyntax.ACTION, PwmSettingCategory.RECOVERY_PROFILE),
+    RECOVERY_RESET_APPLICATION_TO_INITIAL_PASSWORD(
+            "recovery.resetApplicationToInitialPassword", PwmSettingSyntax.ACTION, PwmSettingCategory.RECOVERY_PROFILE),
 
 
     // forgotten username

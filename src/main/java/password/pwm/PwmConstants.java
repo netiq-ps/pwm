@@ -178,6 +178,7 @@ public abstract class PwmConstants {
         RECOVER_PASSWORD_RESPONSES("forgottenpassword-responses.jsp"),
         RECOVER_PASSWORD_ATTRIBUTES("forgottenpassword-attributes.jsp"),
         RECOVER_PASSWORD_ACTION_CHOICE("forgottenpassword-actionchoice.jsp"),
+        RECOVER_PASSWORD_APPLICATION_CHOICE("forgottenpassword-applicationchoice.jsp"),
         RECOVER_PASSWORD_METHOD_CHOICE("forgottenpassword-method.jsp"),
         RECOVER_PASSWORD_TOKEN_CHOICE("forgottenpassword-tokenchoice.jsp"),
         RECOVER_PASSWORD_ENTER_TOKEN("forgottenpassword-entertoken.jsp"),
