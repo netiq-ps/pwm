@@ -43,7 +43,7 @@ import password.pwm.http.ProcessStatus;
 import password.pwm.http.PwmRequest;
 import password.pwm.http.PwmRequestAttribute;
 import password.pwm.http.PwmSession;
-import password.pwm.http.bean.ImmutableByteArray;
+import password.pwm.data.ImmutableByteArray;
 import password.pwm.http.bean.UpdateProfileBean;
 import password.pwm.http.servlet.ControlledPwmServlet;
 import password.pwm.i18n.Message;
@@ -57,7 +57,8 @@ import password.pwm.svc.token.TokenUtil;
 import password.pwm.util.form.FormUtility;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
@@ -93,8 +94,13 @@ import java.util.Optional;
 )
 public class UpdateProfileServlet extends ControlledPwmServlet
 {
-
     private static final PwmLogger LOGGER = PwmLogger.forClass( UpdateProfileServlet.class );
+
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
 
     @Data
     public static class ValidateResponse implements Serializable
@@ -153,7 +159,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "enterCode" )
-    ProcessStatus handleEnterCodeRequest(
+    public ProcessStatus handleEnterCodeRequest(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, ServletException, IOException
@@ -196,7 +202,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
             return ProcessStatus.Halt;
         }
 
-        LOGGER.debug( pwmRequest, () -> "marking token as passed " + JsonUtil.serialize( tokenDestinationItem ) );
+        LOGGER.debug( pwmRequest, () -> "marking token as passed " + JsonFactory.get().serialize( tokenDestinationItem ) );
         updateProfileBean.getCompletedTokenFields().add( updateProfileBean.getCurrentTokenField() );
         updateProfileBean.setTokenSent( false );
         updateProfileBean.setCurrentTokenField( null );
@@ -212,7 +218,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "validate" )
-    ProcessStatus restValidateForm(
+    public ProcessStatus restValidateForm(
             final PwmRequest pwmRequest
     )
             throws IOException, ServletException, PwmUnrecoverableException, ChaiUnavailableException
@@ -248,15 +254,15 @@ public class UpdateProfileServlet extends ControlledPwmServlet
         final ValidateResponse response = new ValidateResponse();
         response.setMessage( userMessage );
         response.setSuccess( success );
-        pwmRequest.outputJsonResult( RestResultBean.withData( response ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( response, ValidateResponse.class ) );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "reset" )
-    private ProcessStatus processReset( final PwmRequest pwmRequest )
+    public ProcessStatus processReset( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException
     {
-        final ResetAction resetType = pwmRequest.readParameterAsEnum( PwmConstants.PARAM_RESET_TYPE, ResetAction.class, ResetAction.exitProfileUpdate );
+        final ResetAction resetType = pwmRequest.readParameterAsEnum( PwmConstants.PARAM_RESET_TYPE, ResetAction.class ).orElse( ResetAction.exitProfileUpdate );
 
         switch ( resetType )
         {
@@ -275,7 +281,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
                 return ProcessStatus.Halt;
 
             default:
-                JavaHelper.unhandledSwitchStatement( resetType );
+                PwmUtil.unhandledSwitchStatement( resetType );
 
         }
 
@@ -284,7 +290,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
 
 
     @ActionHandler( action = "agree" )
-    ProcessStatus handleAgreeRequest( final PwmRequest pwmRequest )
+    public ProcessStatus handleAgreeRequest( final PwmRequest pwmRequest )
             throws ServletException, IOException, PwmUnrecoverableException, ChaiUnavailableException
     {
         LOGGER.debug( pwmRequest, () -> "user accepted agreement" );
@@ -306,7 +312,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "confirm" )
-    ProcessStatus handleConfirmRequest( final PwmRequest pwmRequest )
+    public ProcessStatus handleConfirmRequest( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException
     {
         final UpdateProfileBean updateProfileBean = getBean( pwmRequest );
@@ -316,7 +322,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "updateProfile" )
-    ProcessStatus handleUpdateProfileRequest(
+    public ProcessStatus handleUpdateProfileRequest(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, ChaiUnavailableException
@@ -330,7 +336,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
         }
         catch ( final PwmOperationalException e )
         {
-            LOGGER.error( pwmRequest, () -> e.getMessage() );
+            LOGGER.error( pwmRequest, e::getMessage );
             setLastError( pwmRequest, e.getErrorInformation() );
         }
 
@@ -358,7 +364,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
             {
                 if ( !updateProfileBean.isAgreementPassed() )
                 {
-                    final MacroRequest macroRequest = pwmRequest.getPwmSession().getSessionManager().getMacroMachine( );
+                    final MacroRequest macroRequest = pwmRequest.getMacroMachine( );
                     final String expandedText = macroRequest.expandMacros( updateProfileAgreementText );
                     pwmRequest.setAttribute( PwmRequestAttribute.AgreementText, expandedText );
                     pwmRequest.forwardToJsp( JspUrl.UPDATE_ATTRIBUTES_AGREEMENT );
@@ -400,7 +406,7 @@ public class UpdateProfileServlet extends ControlledPwmServlet
         }
         catch ( final PwmException e )
         {
-            LOGGER.error( pwmRequest, () -> e.getMessage() );
+            LOGGER.error( pwmRequest, e::getMessage );
             setLastError( pwmRequest, e.getErrorInformation() );
             UpdateProfileUtil.forwardToForm( pwmRequest, updateProfileProfile, updateProfileBean );
             return;
@@ -423,13 +429,13 @@ public class UpdateProfileServlet extends ControlledPwmServlet
         try
         {
             // write the form values
-            final ChaiUser theUser = pwmSession.getSessionManager().getActor( );
+            final ChaiUser theUser = pwmRequest.getClientConnectionHolder().getActor( );
             UpdateProfileUtil.doProfileUpdate(
                     pwmRequest.getPwmDomain(),
                     pwmRequest.getLabel(),
                     pwmRequest.getLocale(),
                     pwmSession.getUserInfo(),
-                    pwmSession.getSessionManager().getMacroMachine( ),
+                    pwmRequest.getMacroMachine( ),
                     updateProfileProfile,
                     updateProfileBean.getFormData(),
                     theUser
@@ -449,13 +455,13 @@ public class UpdateProfileServlet extends ControlledPwmServlet
         }
         catch ( final PwmException e )
         {
-            LOGGER.error( pwmRequest, () -> e.getMessage() );
+            LOGGER.error( pwmRequest, e::getMessage );
             setLastError( pwmRequest, e.getErrorInformation() );
         }
         catch ( final ChaiException e )
         {
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_UPDATE_ATTRS_FAILURE, e.toString() );
-            LOGGER.error( pwmRequest, () -> errorInformation.toDebugStr() );
+            LOGGER.error( pwmRequest, errorInformation::toDebugStr );
             setLastError( pwmRequest, errorInformation );
         }
 

@@ -21,6 +21,7 @@
 package password.pwm.ldap;
 
 import password.pwm.bean.LocalSessionStateBean;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.ResponseInfoBean;
 import password.pwm.config.DomainConfig;
 import password.pwm.config.PwmSetting;
@@ -28,8 +29,9 @@ import password.pwm.config.option.ViewStatusFields;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.bean.DisplayElement;
 import password.pwm.i18n.Display;
+import password.pwm.user.UserInfo;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmTimeUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 
@@ -73,7 +75,7 @@ public final class ViewableUserInfoDisplayReader
 
         if ( config.getLdapProfiles().size() > 1 )
         {
-            final String ldapProfileID = userInfo.getUserIdentity().getLdapProfileID();
+            final ProfileID ldapProfileID = userInfo.getUserIdentity().getLdapProfileID();
             final String value = config.getLdapProfiles().get( ldapProfileID ).getDisplayName( locale );
             maker.add(
                     ViewStatusFields.UserDN,
@@ -131,7 +133,7 @@ public final class ViewableUserInfoDisplayReader
                 maker.add(
                         ViewStatusFields.LastLoginTimeDelta,
                         Display.Field_LastLoginTimeDelta,
-                        TimeDuration.fromCurrent( lastLoginTime ).asLongString( locale )
+                        PwmTimeUtil.asLongString( TimeDuration.fromCurrent( lastLoginTime ), locale )
                 );
             }
         }
@@ -168,7 +170,7 @@ public final class ViewableUserInfoDisplayReader
 
         {
             final String value = userInfo.getPasswordLastModifiedTime() != null
-                    ? TimeDuration.fromCurrent( userInfo.getPasswordLastModifiedTime() ).asLongString( locale )
+                    ? PwmTimeUtil.asLongString( TimeDuration.fromCurrent( userInfo.getPasswordLastModifiedTime() ), locale )
                     : LocaleHelper.getLocalizedMessage( locale, Display.Value_NotApplicable, config );
             maker.add(
                     ViewStatusFields.PasswordSetTimeDelta,
@@ -299,7 +301,7 @@ public final class ViewableUserInfoDisplayReader
 
             final String strValue = instant == null
                     ? LocaleHelper.getLocalizedMessage( locale, Display.Value_NotApplicable, config )
-                    : JavaHelper.toIsoDate( instant );
+                    : StringUtil.toIsoDate( instant );
 
             list.add( new DisplayElement(
                     display.name(),

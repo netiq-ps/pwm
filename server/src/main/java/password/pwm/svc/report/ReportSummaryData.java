@@ -24,6 +24,7 @@ import com.novell.ldapchai.cr.Answer;
 import lombok.Builder;
 import lombok.Value;
 import password.pwm.bean.DomainID;
+import password.pwm.bean.ProfileID;
 import password.pwm.config.AppConfig;
 import password.pwm.config.DomainConfig;
 import password.pwm.config.option.DataStorageMethod;
@@ -31,7 +32,7 @@ import password.pwm.config.profile.LdapProfile;
 import password.pwm.i18n.Admin;
 import password.pwm.util.i18n.LocaleHelper;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.Percent;
+import password.pwm.util.Percent;
 import password.pwm.util.java.PwmNumberFormat;
 import password.pwm.util.java.TimeDuration;
 
@@ -70,7 +71,7 @@ public class ReportSummaryData
 
     private final Map<DataStorageMethod, LongAdder> responseStorage = new ConcurrentHashMap<>();
     private final Map<Answer.FormatType, LongAdder> responseFormatType = new ConcurrentHashMap<>();
-    private final Map<DomainID, Map<String, LongAdder>> ldapProfile = new ConcurrentHashMap<>();
+    private final Map<DomainID, Map<ProfileID, LongAdder>> ldapProfile = new ConcurrentHashMap<>();
     private final Map<Integer, LongAdder> pwExpireDays = new ConcurrentHashMap<>();
     private final Map<Integer, LongAdder> accountExpireDays = new ConcurrentHashMap<>();
     private final Map<Integer, LongAdder> changePwDays = new ConcurrentHashMap<>();
@@ -297,7 +298,7 @@ public class ReportSummaryData
                 if ( userReportRecord.getLdapProfile() != null )
                 {
                     final DomainID domainID = userReportRecord.getDomainID();
-                    final String userProfile = userReportRecord.getLdapProfile();
+                    final ProfileID userProfile = userReportRecord.getLdapProfile();
                     reportSummaryData.ldapProfile
                             .computeIfAbsent( domainID, type -> new ConcurrentHashMap<>() )
                             .computeIfAbsent( userProfile, type -> new LongAdder() )
@@ -387,13 +388,13 @@ public class ReportSummaryData
         }
 
 
-        for ( final Map.Entry<DomainID, Map<String, LongAdder>> domainIDMapEntry : new TreeMap<>( ldapProfile ).entrySet() )
+        for ( final Map.Entry<DomainID, Map<ProfileID, LongAdder>> domainIDMapEntry : new TreeMap<>( ldapProfile ).entrySet() )
         {
-            for ( final Map.Entry<String, LongAdder> profileMapEntry : new TreeMap<>( domainIDMapEntry.getValue() ).entrySet() )
+            for ( final Map.Entry<ProfileID, LongAdder> profileMapEntry : new TreeMap<>( domainIDMapEntry.getValue() ).entrySet() )
             {
                 final DomainID domainID = domainIDMapEntry.getKey();
                 final DomainConfig domainConfig = config.getDomainConfigs().get( domainID );
-                final String userProfile = profileMapEntry.getKey();
+                final ProfileID userProfile = profileMapEntry.getKey();
                 final LdapProfile ldapProfile = domainConfig.getLdapProfiles().get( userProfile );
                 final long count = profileMapEntry.getValue().sum();
 
@@ -440,12 +441,12 @@ public class ReportSummaryData
 
         returnCollection.add( builder.makeRow( "Field_Report_Sum_HaveResponses", this.hasResponses.sum() ) );
         returnCollection.add( builder.makeRow( "Field_Report_Sum_HaveHelpdeskResponses", this.hasHelpdeskResponses.sum() ) );
-        for ( final DataStorageMethod storageMethod : CollectionUtil.copiedEnumSet( this.getResponseStorage().keySet(), DataStorageMethod.class ) )
+        for ( final DataStorageMethod storageMethod : CollectionUtil.copyToEnumSet( this.getResponseStorage().keySet(), DataStorageMethod.class ) )
         {
             final long count = this.getResponseStorage().get( storageMethod );
             returnCollection.add( builder.makeRow( "Field_Report_Sum_StorageMethod", count, storageMethod.toString() ) );
         }
-        for ( final Answer.FormatType formatType : CollectionUtil.copiedEnumSet( this.getResponseFormatType().keySet(), Answer.FormatType.class ) )
+        for ( final Answer.FormatType formatType : CollectionUtil.copyToEnumSet( this.getResponseFormatType().keySet(), Answer.FormatType.class ) )
         {
             final long count = this.getResponseFormatType().get( formatType );
             returnCollection.add( builder.makeRow( "Field_Report_Sum_ResponseFormatType", count, formatType.toString() ) );

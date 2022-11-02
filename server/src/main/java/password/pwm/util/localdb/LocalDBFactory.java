@@ -34,7 +34,7 @@ import java.io.File;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -103,6 +103,20 @@ public class LocalDBFactory
                 }
             }
 
+            logInstanceCreation( dbDirectory, readonly, startTime, localDB );
+
+            return localDB;
+        }
+        finally
+        {
+            CREATION_LOCK.unlock();
+        }
+    }
+
+    private static void logInstanceCreation( final File dbDirectory, final boolean readonly, final Instant startTime, final LocalDB localDB )
+    {
+        LOGGER.info( () ->
+        {
             final StringBuilder debugText = new StringBuilder();
             debugText.append( "LocalDB open" );
 
@@ -121,14 +135,8 @@ public class LocalDBFactory
                     debugText.append( ", " ).append( StringUtil.formatDiskSize( freeSpace ) ).append( " free" );
                 }
             }
-            LOGGER.info( () -> debugText, () -> TimeDuration.fromCurrent( startTime ) );
-
-            return localDB;
-        }
-        finally
-        {
-            CREATION_LOCK.unlock();
-        }
+            return debugText.toString();
+        }, TimeDuration.fromCurrent( startTime ) );
     }
 
     private static LocalDBProvider createInstance( final String className )
@@ -186,7 +194,7 @@ public class LocalDBFactory
 
     private static Map<LocalDBProvider.Parameter, String> makeParameterMap( final AppConfig appConfig, final boolean readOnly )
     {
-        final Map<LocalDBProvider.Parameter, String> parameters = new HashMap<>();
+        final Map<LocalDBProvider.Parameter, String> parameters = new EnumMap<>( LocalDBProvider.Parameter.class );
         if ( readOnly )
         {
             parameters.put( LocalDBProvider.Parameter.readOnly, Boolean.TRUE.toString() );

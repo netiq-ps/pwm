@@ -297,7 +297,7 @@
                         <% for (final ProfileDefinition profileDefinition : userDebugDataBean.getProfiles().keySet()) { %>
                         <tr>
                             <td><%=profileDefinition%></td>
-                            <td><%=JspUtility.friendlyWrite(pageContext, userDebugDataBean.getProfiles().get(profileDefinition))%></td>
+                            <td><%=JspUtility.friendlyWrite(pageContext, userDebugDataBean.getProfiles().get(profileDefinition).stringValue())%></td>
                         </tr>
                         <% } %>
                     </table>
@@ -343,9 +343,9 @@
                         <tr>
                             <td>ID</td>
                             <td><pwm:display key="<%=Display.Value_NotApplicable.toString()%>"/></td>
-                            <td><%=JspUtility.friendlyWrite(pageContext, configPolicy.getIdentifier())%></td>
-                            <td><%=JspUtility.friendlyWrite(pageContext, ldapPolicy.getIdentifier())%></td>
-                            <td><%=JspUtility.friendlyWrite(pageContext, userPolicy.getIdentifier())%></td>
+                            <td><%=JspUtility.friendlyWrite(pageContext, configPolicy.getId().stringValue())%></td>
+                            <td><%=JspUtility.friendlyWrite(pageContext, ldapPolicy.getId().stringValue())%></td>
+                            <td><%=JspUtility.friendlyWrite(pageContext, userPolicy.getId().stringValue())%></td>
                         </tr>
                         <tr>
                             <td>Display Name</td>
@@ -458,12 +458,13 @@
             <% } %>
         </table>
         <br/>
+        <% { %><%-- Begin Challenge Profile --%>
         <table>
             <tr>
                 <td colspan="10" class="title">Challenge Profile</td>
             </tr>
             <% final ChallengeProfile challengeProfile = userDebugDataBean.getUserInfo().getChallengeProfile(); %>
-            <% if (challengeProfile == null) { %>
+            <% if ( challengeProfile == null ) { %>
             <tr>
                 <td>Assigned Profile</td>
                 <td><pwm:display key="<%=Display.Value_NotApplicable.toString()%>"/></td>
@@ -475,7 +476,7 @@
             </tr>
             <tr>
                 <td>Identifier</td>
-                <td><%=challengeProfile.getIdentifier()%></td>
+                <td><%=challengeProfile.getId()%></td>
             </tr>
             <tr>
                 <td>Locale</td>
@@ -494,7 +495,8 @@
                             <td class="key">Enforce Wordlist</td>
                             <td class="key">Max Question Characters</td>
                         </tr>
-                        <% for (final Challenge challenge : challengeProfile.getChallengeSet().getChallenges()) { %>
+                        <% if ( challengeProfile.hasChallenges() ) { %>
+                        <% for (final Challenge challenge : challengeProfile.getChallengeSet().get().getChallenges()) { %>
                         <tr>
                             <td>
                                 <%= challenge.isAdminDefined() ? "Admin Defined" : "User Defined" %>
@@ -519,13 +521,58 @@
                             </td>
                         </tr>
                         <% } %>
+                        <% } %>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td>Helpdesk Challenges</td>
+                <td>
+                    <table>
+                        <tr>
+                            <td class="key">Type</td>
+                            <td class="key">Text</td>
+                            <td class="key">Required</td>
+                            <td class="key">Min Length</td>
+                            <td class="key">Max Length</td>
+                            <td class="key">Enforce Wordlist</td>
+                            <td class="key">Max Question Characters</td>
+                        </tr>
+                        <% if ( challengeProfile.hasHelpdeskChallenges() ) { %>
+                        <% for (final Challenge challenge : challengeProfile.getHelpdeskChallengeSet().get().getChallenges()) { %>
+                        <tr>
+                            <td>
+                                <%= challenge.isAdminDefined() ? "Admin Defined" : "User Defined" %>
+                            </td>
+                            <td>
+                                <%= JspUtility.friendlyWrite(pageContext, challenge.getChallengeText())%>
+                            </td>
+                            <td>
+                                <%= JspUtility.friendlyWrite(pageContext, challenge.isRequired())%>
+                            </td>
+                            <td>
+                                <%= challenge.getMinLength() %>
+                            </td>
+                            <td>
+                                <%= challenge.getMaxLength() %>
+                            </td>
+                            <td>
+                                <%= JspUtility.friendlyWrite(pageContext, challenge.isEnforceWordlist())%>
+                            </td>
+                            <td>
+                                <%= challenge.getMaxQuestionCharsInAnswer() %>
+                            </td>
+                        </tr>
+                        <% } %>
+                        <% } %>
                     </table>
                 </td>
             </tr>
             <% } %>
         </table>
-
+        <% } %><%-- End Challenge Profile --%>
         <% } %>
+        </tr>
         <div class="buttonbar">
             <form method="get" class="pwm-form">
                 <button type="submit" class="btn"><pwm:display key="Button_Continue"/></button>

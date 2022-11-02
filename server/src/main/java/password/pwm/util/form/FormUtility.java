@@ -40,15 +40,15 @@ import password.pwm.error.PwmError;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmRequest;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.ldap.search.SearchConfiguration;
-import password.pwm.ldap.search.UserSearchEngine;
+import password.pwm.ldap.search.UserSearchService;
 import password.pwm.svc.cache.CacheKey;
 import password.pwm.svc.cache.CachePolicy;
 import password.pwm.svc.cache.CacheService;
 import password.pwm.util.Validator;
-import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.EnumUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 
@@ -176,7 +176,7 @@ public class FormUtility
 
     public static Map<String, String> asStringMap( final Map<FormConfiguration, String> input )
     {
-        final Map<String, String> returnObj = new LinkedHashMap<>();
+        final Map<String, String> returnObj = new LinkedHashMap<>( input.size() );
         for ( final Map.Entry<FormConfiguration, String> entry : input.entrySet() )
         {
             final FormConfiguration formConfiguration = entry.getKey();
@@ -196,7 +196,7 @@ public class FormUtility
             final Map<String, String> values
     )
     {
-        final Map<FormConfiguration, String> returnMap = new LinkedHashMap<>();
+        final Map<FormConfiguration, String> returnMap = new LinkedHashMap<>( formConfigurations.size() );
         for ( final FormConfiguration formConfiguration : formConfigurations )
         {
             final String name = formConfiguration.getName();
@@ -235,7 +235,7 @@ public class FormUtility
     )
             throws PwmDataValidationException, PwmUnrecoverableException
     {
-        final boolean allowResultCaching = JavaHelper.enumArrayContainsValue( validationFlags, ValidationFlag.allowResultCaching );
+        final boolean allowResultCaching = EnumUtil.enumArrayContainsValue( validationFlags, ValidationFlag.allowResultCaching );
 
         final Map<String, String> filterClauses = new HashMap<>();
         final Map<String, String> labelMap = new HashMap<>();
@@ -244,7 +244,7 @@ public class FormUtility
             final FormConfiguration formItem = entry.getKey();
             if ( formItem.isUnique() )
             {
-                final boolean checkReadOnlyAndHidden = JavaHelper.enumArrayContainsValue( validationFlags, ValidationFlag.checkReadOnlyAndHidden );
+                final boolean checkReadOnlyAndHidden = EnumUtil.enumArrayContainsValue( validationFlags, ValidationFlag.checkReadOnlyAndHidden );
                 final boolean itemIsReadOnly = formItem.isReadonly();
                 final boolean itemIsHidden = formItem.getType() == FormConfiguration.Type.hidden;
 
@@ -275,9 +275,9 @@ public class FormUtility
             filter.append( "(|" );
             for ( final String objectClass : pwmDomain.getConfig().readSettingAsStringArray( PwmSetting.DEFAULT_OBJECT_CLASSES ) )
             {
-                filter.append( "(objectClass=" ).append( objectClass ).append( ")" );
+                filter.append( "(objectClass=" ).append( objectClass ).append( ')' );
             }
-            filter.append( ")" );
+            filter.append( ')' );
 
             // attributes
             filter.append( "(|" );
@@ -285,16 +285,17 @@ public class FormUtility
             {
                 final String name = entry.getKey();
                 final String value = entry.getValue();
-                filter.append( "(" ).append( name ).append( "=" ).append( StringUtil.escapeLdapFilter( value ) ).append( ")" );
+                filter.append( '(' ).append( name ).append( '=' )
+                        .append( StringUtil.escapeLdapFilter( value ) ).append( ')' );
             }
-            filter.append( ")" );
+            filter.append( ')' );
 
-            filter.append( ")" );
+            filter.append( ')' );
         }
 
         final CacheService cacheService = pwmDomain.getCacheService();
         final CacheKey cacheKey = CacheKey.newKey(
-                Validator.class, null, "attr_unique_check_" + filter.toString()
+                Validator.class, null, "attr_unique_check_" + filter
         );
         if ( allowResultCaching && cacheService != null )
         {
@@ -307,7 +308,7 @@ public class FormUtility
                 }
                 else
                 {
-                    final ErrorInformation errorInformation = JsonUtil.deserialize( cacheValue, ErrorInformation.class );
+                    final ErrorInformation errorInformation = JsonFactory.get().deserialize( cacheValue, ErrorInformation.class );
                     throw new PwmDataValidationException( errorInformation );
                 }
             }
@@ -326,12 +327,12 @@ public class FormUtility
 
         try
         {
-            final UserSearchEngine userSearchEngine = pwmDomain.getUserSearchEngine();
-            final Map<UserIdentity, Map<String, String>> results = new LinkedHashMap<>( userSearchEngine.performMultiUserSearch(
+            final UserSearchService userSearchService = pwmDomain.getUserSearchEngine();
+            final Map<UserIdentity, Map<String, String>> results = new LinkedHashMap<>( userSearchService.performMultiUserSearch(
                     searchConfiguration,
                     resultSearchSizeLimit,
                     Collections.emptyList(),
-                    SessionLabel.SYSTEM_LABEL
+                    sessionLabel
             ) );
 
             if ( excludeDN != null && !excludeDN.isEmpty() )
@@ -378,7 +379,7 @@ public class FormUtility
                     if ( compareResult )
                     {
                         final String label = labelMap.get( name );
-                        LOGGER.trace( sessionLabel, () ->  "found duplicate value for attribute '" + label + "' on entry " + userIdentity );
+                        LOGGER.trace( sessionLabel, () -> "found duplicate value for attribute '" + label + "' on entry " + userIdentity );
                         final ErrorInformation error = new ErrorInformation( PwmError.ERROR_FIELD_DUPLICATE, null, new String[]
                                 {
                                         label,
@@ -397,7 +398,7 @@ public class FormUtility
         {
             if ( cacheService != null )
             {
-                final String jsonPayload = JsonUtil.serialize( e.getErrorInformation() );
+                final String jsonPayload = JsonFactory.get().serialize( e.getErrorInformation() );
                 cacheService.put( cacheKey, cachePolicy, jsonPayload );
             }
             throw new PwmDataValidationException( e.getErrorInformation() );
@@ -458,8 +459,8 @@ public class FormUtility
             if ( objectClasses.size() == 1 )
             {
                 sb.append( "(objectclass=" );
-                sb.append( objectClasses.iterator().next() );
-                sb.append( ")" );
+                sb.append( objectClasses.get( 0 ) );
+                sb.append( ')' );
             }
             else
             {
@@ -468,23 +469,23 @@ public class FormUtility
                 {
                     sb.append( "(objectclass=" );
                     sb.append( objectClassValue );
-                    sb.append( ")" );
+                    sb.append( ')' );
                 }
-                sb.append( ")" );
+                sb.append( ')' );
             }
         }
 
         for ( final FormConfiguration formConfiguration : formElements )
         {
             final String formElementName = formConfiguration.getName();
-            sb.append( "(" );
+            sb.append( '(' );
             sb.append( formElementName );
-            sb.append( "=" );
-            sb.append( "%" ).append( formElementName ).append( "%" );
-            sb.append( ")" );
+            sb.append( '=' );
+            sb.append( '%' ).append( formElementName ).append( '%' );
+            sb.append( ')' );
         }
 
-        sb.append( ")" );
+        sb.append( ')' );
         return sb.toString();
     }
 
@@ -504,7 +505,7 @@ public class FormUtility
                 final List<String> values = valueMap.get( formConfiguration );
                 if ( values != null && !values.isEmpty() )
                 {
-                    final String value = values.iterator().next();
+                    final String value = values.get( 0 );
                     formMap.put( formConfiguration, value );
                 }
             }
@@ -519,9 +520,9 @@ public class FormUtility
     )
             throws PwmUnrecoverableException
     {
-        final boolean includeNulls = JavaHelper.enumArrayContainsValue( flags, Flag.ReturnEmptyValues );
+        final boolean includeNulls = EnumUtil.enumArrayContainsValue( flags, Flag.ReturnEmptyValues );
         final List<String> formFieldNames = FormConfiguration.convertToListOfNames( formFields );
-        LOGGER.trace( sessionLabel, () -> "preparing to load form data from ldap for fields " + JsonUtil.serializeCollection( formFieldNames ) );
+        LOGGER.trace( sessionLabel, () -> "preparing to load form data from ldap for fields " + JsonFactory.get().serializeCollection( formFieldNames ) );
         final Map<String, List<String>> dataFromLdap = new LinkedHashMap<>();
         try
         {
@@ -575,14 +576,15 @@ public class FormUtility
             throw new PwmUnrecoverableException( errorInformation );
         }
 
-        final Map<FormConfiguration, List<String>> returnMap = new LinkedHashMap<>();
+        final Map<FormConfiguration, List<String>> returnMap = new LinkedHashMap<>( formFields.size() );
         for ( final FormConfiguration formItem : formFields )
         {
             final String attrName = formItem.getName();
-            if ( dataFromLdap.containsKey( attrName ) )
+            final List<String> ldapValues = dataFromLdap.get( attrName );
+            if ( ldapValues != null )
             {
-                final List<String> values = new ArrayList<>();
-                for ( final String value : dataFromLdap.get( attrName ) )
+                final List<String> values = new ArrayList<>( ldapValues.size() );
+                for ( final String value : ldapValues )
                 {
                     final String parsedValue = parseInputValueToFormValue( formItem, value );
                     values.add( parsedValue );
@@ -597,13 +599,13 @@ public class FormUtility
 
     public static Map<FormConfiguration, String> multiValueMapToSingleValue( final Map<FormConfiguration, List<String>> input )
     {
-        final Map<FormConfiguration, String> returnMap = new LinkedHashMap<>();
+        final Map<FormConfiguration, String> returnMap = new LinkedHashMap<>( input.size() );
         for ( final Map.Entry<FormConfiguration, List<String>> entry : input.entrySet() )
         {
             final FormConfiguration formConfiguration = entry.getKey();
             final List<String> listValue = entry.getValue();
             final String value = listValue != null && !listValue.isEmpty()
-                    ? listValue.iterator().next()
+                    ? listValue.get( 0 )
                     : null;
             returnMap.put( formConfiguration, value );
         }
@@ -638,7 +640,7 @@ public class FormUtility
 
     public static Map<String, FormConfiguration> asFormNameMap( final List<FormConfiguration> formConfigurations )
     {
-        final Map<String, FormConfiguration> returnMap = new LinkedHashMap<>();
+        final Map<String, FormConfiguration> returnMap = new LinkedHashMap<>( formConfigurations.size() );
         for ( final FormConfiguration formConfiguration : formConfigurations )
         {
             returnMap.put( formConfiguration.getName(), formConfiguration );

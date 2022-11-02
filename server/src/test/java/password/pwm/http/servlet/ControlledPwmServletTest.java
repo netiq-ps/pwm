@@ -20,14 +20,13 @@
 
 package password.pwm.http.servlet;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.reflections.Reflections;
-import org.reflections.scanners.FieldAnnotationsScanner;
-import org.reflections.scanners.SubTypesScanner;
-import org.reflections.scanners.TypeAnnotationsScanner;
+import org.reflections.scanners.Scanners;
 import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
+import password.pwm.PwmConstants;
 import password.pwm.http.ProcessStatus;
 import password.pwm.http.PwmRequest;
 import password.pwm.util.java.JavaHelper;
@@ -60,13 +59,32 @@ public class ControlledPwmServletTest
 
             if ( !processActionsClass.isEnum() )
             {
-                Assert.fail( controlledPwmServlet.getName() + " process action class must be an enum" );
+                Assertions.fail( controlledPwmServlet.getName() + " process action class must be an enum" );
             }
         }
     }
 
     @Test
-    public void testActionHandlerReturnTypes() throws IllegalAccessException, InstantiationException
+    public void testActionHandlerAccessibility()
+    {
+        final Map<Class<? extends ControlledPwmServlet>, Map<String, Method>> dataMap = getClassAndMethods();
+
+        for ( final Class<? extends ControlledPwmServlet> controlledPwmServlet : dataMap.keySet() )
+        {
+            final String servletName = controlledPwmServlet.getName();
+            for ( final String methodName : dataMap.get( controlledPwmServlet ).keySet() )
+            {
+                final Method method = dataMap.get( controlledPwmServlet ).get( methodName );
+                if ( !Modifier.isPublic( method.getModifiers() ) )
+                {
+                    Assertions.fail( servletName + "#" + method.getName() + " must be public " );
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testActionHandlerReturnTypes()
     {
         final Map<Class<? extends ControlledPwmServlet>, Map<String, Method>> dataMap = getClassAndMethods();
 
@@ -78,14 +96,14 @@ public class ControlledPwmServletTest
                 final Method method = dataMap.get( controlledPwmServlet ).get( methodName );
                 if ( method.getReturnType() != ProcessStatus.class )
                 {
-                    Assert.fail( servletName + ":" + method.getName() + " must have return type of " + ProcessStatus.class.getName() );
+                    Assertions.fail( servletName + "#" + method.getName() + " must have return type of " + ProcessStatus.class.getName() );
                 }
             }
         }
     }
 
     @Test
-    public void testActionHandlerParameters() throws IllegalAccessException, InstantiationException
+    public void testActionHandlerParameters()
     {
         final Map<Class<? extends ControlledPwmServlet>, Map<String, Method>> dataMap = getClassAndMethods();
 
@@ -98,18 +116,18 @@ public class ControlledPwmServletTest
                 final Class[] returnTypes = method.getParameterTypes();
                 if ( returnTypes.length != 1 )
                 {
-                    Assert.fail( servletName + ":" + method.getName() + " must have exactly one parameter" );
+                    Assertions.fail( servletName + "#" + method.getName() + " must have exactly one parameter" );
                 }
                 if ( !returnTypes[0].equals( PwmRequest.class ) )
                 {
-                    Assert.fail( servletName + ":" + method.getName() + " must have exactly one parameter of type " + PwmRequest.class.getName() );
+                    Assertions.fail( servletName + "#" + method.getName() + " must have exactly one parameter of type " + PwmRequest.class.getName() );
                 }
             }
         }
     }
 
     @Test
-    public void testActionHandlerMethodNaming() throws IllegalAccessException, InstantiationException
+    public void testActionHandlerMethodNaming()
     {
         final Map<Class<? extends ControlledPwmServlet>, Map<String, Method>> dataMap = getClassAndMethods();
 
@@ -125,7 +143,7 @@ public class ControlledPwmServletTest
                     final String actionName = actionHandler.action();
                     if ( !methodName.toLowerCase().contains( actionName.toLowerCase() ) )
                     {
-                        Assert.fail( "method " + servletName + ":" + methodName + " must have the ActionHandler name '"
+                        Assertions.fail( "method " + servletName + "#" + methodName + " must have the ActionHandler name '"
                                 + actionName + "' as part of the method name." );
                     }
                 }
@@ -158,7 +176,7 @@ public class ControlledPwmServletTest
                 missingActionHandlers.removeAll( dataMap.get( controlledPwmServlet ).keySet() );
                 if ( !missingActionHandlers.isEmpty() )
                 {
-                    Assert.fail( servletName + " does not have an action handler for action " + missingActionHandlers.iterator().next() );
+                    Assertions.fail( servletName + " does not have an action handler for action " + missingActionHandlers.iterator().next() );
                 }
             }
 
@@ -167,7 +185,7 @@ public class ControlledPwmServletTest
                 superflousActionHandlers.removeAll( names );
                 if ( !superflousActionHandlers.isEmpty() )
                 {
-                    Assert.fail( servletName + " has an action handler for action " + superflousActionHandlers.iterator().next() + " but no such ProcessAction exists" );
+                    Assertions.fail( servletName + " has an action handler for action " + superflousActionHandlers.iterator().next() + " but no such ProcessAction exists" );
                 }
             }
         }
@@ -176,10 +194,10 @@ public class ControlledPwmServletTest
     private Map<Class<? extends ControlledPwmServlet>, Map<String, Method>> getClassAndMethods()
     {
         final Reflections reflections = new Reflections( new ConfigurationBuilder()
-                .setUrls( ClasspathHelper.forPackage( "password.pwm" ) )
-                .setScanners( new SubTypesScanner(),
-                        new TypeAnnotationsScanner(),
-                        new FieldAnnotationsScanner()
+                .setUrls( ClasspathHelper.forPackage( PwmConstants.PWM_BASE_PACKAGE.getName() ) )
+                .setScanners( Scanners.SubTypes,
+                        Scanners.TypesAnnotated,
+                        Scanners.FieldsAnnotated
                 ) );
 
 

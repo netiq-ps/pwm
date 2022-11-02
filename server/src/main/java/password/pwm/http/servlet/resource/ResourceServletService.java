@@ -22,7 +22,6 @@ package password.pwm.http.servlet.resource;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import org.apache.commons.io.output.NullOutputStream;
 import password.pwm.AppProperty;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
@@ -36,17 +35,20 @@ import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
 import password.pwm.util.java.FileSystemUtility;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.Percent;
+import password.pwm.util.Percent;
 import password.pwm.util.java.StatisticAverageBundle;
 import password.pwm.util.java.StatisticCounterBundle;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
-import password.pwm.util.secure.ChecksumOutputStream;
+import password.pwm.util.secure.PwmHashAlgorithm;
 
 import javax.servlet.ServletContext;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.DigestOutputStream;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -54,6 +56,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.zip.ZipEntry;
@@ -163,7 +166,7 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
         {
             final Instant start = Instant.now();
             resourceNonce = makeResourcePathNonce();
-            LOGGER.trace( getSessionLabel(), () -> "calculated nonce", () -> TimeDuration.fromCurrent( start ) );
+            LOGGER.trace( getSessionLabel(), () -> "calculated nonce", TimeDuration.fromCurrent( start ) );
         }
         catch ( final Exception e )
         {
@@ -175,7 +178,7 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         setStatus( STATUS.CLOSED );
     }
@@ -191,7 +194,7 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
     {
         final Map<String, String> debugInfo = new HashMap<>();
         debugInfo.putAll( averageStats.debugStats() );
-        debugInfo.putAll( countingStats.debugStats() );
+        debugInfo.putAll( countingStats.debugStats( PwmConstants.DEFAULT_LOCALE ) );
         return ServiceInfoBean.builder()
                 .debugProperties( debugInfo )
                 .build();
@@ -213,7 +216,7 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
 
         final Instant startTime = Instant.now();
         final String nonce = checksumAllResources( pwmDomain );
-        LOGGER.debug( getSessionLabel(), () -> "completed generation of nonce '" + nonce + "'", () ->  TimeDuration.fromCurrent( startTime ) );
+        LOGGER.debug( getSessionLabel(), () -> "completed generation of nonce '" + nonce + "'", TimeDuration.fromCurrent( startTime ) );
 
         final String noncePrefix = pwmDomain.getConfig().readAppProperty( AppProperty.HTTP_RESOURCES_NONCE_PATH_PREFIX );
         return "/" + noncePrefix + nonce;
@@ -227,7 +230,7 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
             return false;
         }
 
-        if ( themeName.equals( ResourceFileServlet.EMBED_THEME ) )
+        if ( Objects.equals( themeName, ResourceFileServlet.EMBED_THEME ) )
         {
             return true;
         }
@@ -268,7 +271,7 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
     private String checksumAllResources( final PwmDomain pwmDomain )
             throws IOException
     {
-        try ( ChecksumOutputStream checksumStream = new ChecksumOutputStream( new NullOutputStream() ) )
+        try ( DigestOutputStream checksumStream = new DigestOutputStream( OutputStream.nullOutputStream(), PwmHashAlgorithm.SHA1.newMessageDigest() ) )
         {
             checksumResourceFilePath( pwmDomain, checksumStream );
 
@@ -290,11 +293,11 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
                     }
                 }
             }
-            return checksumStream.checksum();
+            return JavaHelper.binaryArrayToHex( checksumStream.getMessageDigest().digest() ).toLowerCase();
         }
     }
 
-    private static void checksumResourceFilePath( final PwmDomain pwmDomain, final ChecksumOutputStream checksumStream )
+    private static void checksumResourceFilePath( final PwmDomain pwmDomain, final DigestOutputStream checksumStream )
     {
         if ( pwmDomain.getPwmApplication().getPwmEnvironment().getContextManager() != null )
         {
@@ -315,7 +318,7 @@ public class ResourceServletService extends AbstractPwmService implements PwmSer
                                 while ( iter.hasNext()  )
                                 {
                                     final FileSystemUtility.FileSummaryInformation fileSummaryInformation = iter.next();
-                                    checksumStream.write( JavaHelper.longToBytes( fileSummaryInformation.getChecksum() ) );
+                                    checksumStream.write( fileSummaryInformation.getSha512Hash().getBytes( StandardCharsets.UTF_8 ) );
                                 }
 
                             }

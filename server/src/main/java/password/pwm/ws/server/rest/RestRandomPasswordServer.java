@@ -22,6 +22,7 @@ package password.pwm.ws.server.rest;
 
 import lombok.Data;
 import password.pwm.PwmConstants;
+import password.pwm.PwmDomain;
 import password.pwm.config.option.WebServiceUsage;
 import password.pwm.config.profile.PwmPasswordPolicy;
 import password.pwm.error.ErrorInformation;
@@ -34,6 +35,8 @@ import password.pwm.http.PwmHttpRequestWrapper;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.util.PasswordData;
+import password.pwm.util.password.RandomGeneratorConfig;
+import password.pwm.util.password.RandomGeneratorConfigRequest;
 import password.pwm.util.password.RandomPasswordGenerator;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
@@ -110,8 +113,7 @@ public class RestRandomPasswordServer extends RestServlet
         try
         {
             final JsonOutput jsonOutput = doOperation( restRequest, jsonInput );
-            final RestResultBean restResultBean = RestResultBean.withData( jsonOutput );
-            return restResultBean;
+            return RestResultBean.withData( jsonOutput, JsonOutput.class );
         }
         catch ( final PwmException e )
         {
@@ -153,7 +155,7 @@ public class RestRandomPasswordServer extends RestServlet
         try
         {
             final JsonOutput jsonOutput = doOperation( restRequest, jsonInput );
-            return RestResultBean.withData( jsonOutput.getPassword() );
+            return RestResultBean.withData( jsonOutput.getPassword(), String.class );
         }
         catch ( final Exception e )
         {
@@ -174,7 +176,7 @@ public class RestRandomPasswordServer extends RestServlet
         try
         {
             final JsonOutput jsonOutput = doOperation( restRequest, jsonInput );
-            return RestResultBean.withData( jsonOutput );
+            return RestResultBean.withData( jsonOutput, JsonOutput.class );
         }
         catch ( final PwmException e )
         {
@@ -212,23 +214,25 @@ public class RestRandomPasswordServer extends RestServlet
                     targetUserIdentity.getChaiUser() );
         }
 
-        final RandomPasswordGenerator.RandomGeneratorConfig randomConfig = jsonInputToRandomConfig( jsonInput, pwmPasswordPolicy );
+        final RandomGeneratorConfig randomConfig = jsonInputToRandomConfig( jsonInput, restRequest.getDomain(), pwmPasswordPolicy );
         final PasswordData randomPassword = RandomPasswordGenerator.createRandomPassword( restRequest.getSessionLabel(), randomConfig, restRequest.getDomain() );
         final JsonOutput outputMap = new JsonOutput();
         outputMap.password = randomPassword.getStringValue();
 
-        StatisticsClient.incrementStat( restRequest.getDomain(), Statistic.REST_SETPASSWORD );
+        StatisticsClient.incrementStat( restRequest.getDomain(), Statistic.REST_RANDOMPASSWORD );
 
         return outputMap;
     }
 
-    public static RandomPasswordGenerator.RandomGeneratorConfig jsonInputToRandomConfig(
+    public static RandomGeneratorConfig jsonInputToRandomConfig(
             final JsonInput jsonInput,
+            final PwmDomain pwmDomain,
             final PwmPasswordPolicy pwmPasswordPolicy
     )
+            throws PwmUnrecoverableException
     {
-        final RandomPasswordGenerator.RandomGeneratorConfig.RandomGeneratorConfigBuilder randomConfigBuilder
-                = RandomPasswordGenerator.RandomGeneratorConfig.builder();
+        final RandomGeneratorConfigRequest.RandomGeneratorConfigRequestBuilder randomConfigBuilder
+                = RandomGeneratorConfigRequest.builder();
 
         if ( jsonInput.getStrength() > 0 && jsonInput.getStrength() <= 100 )
         {
@@ -244,17 +248,16 @@ public class RestRandomPasswordServer extends RestServlet
         }
         if ( jsonInput.getChars() != null )
         {
-            final List<String> charValues = new ArrayList<>();
-            for ( int i = 0; i < jsonInput.getChars().length(); i++ )
+            final String inputChars = jsonInput.getChars();
+            final List<String> charValues = new ArrayList<>( inputChars.length() );
+            for ( int i = 0; i < inputChars.length(); i++ )
             {
-                charValues.add( String.valueOf( jsonInput.getChars().charAt( i ) ) );
+                charValues.add( String.valueOf( inputChars.charAt( i ) ) );
             }
             randomConfigBuilder.seedlistPhrases( charValues );
         }
 
-        randomConfigBuilder.passwordPolicy( pwmPasswordPolicy );
-
-        return randomConfigBuilder.build();
+        return RandomGeneratorConfig.make( pwmDomain, pwmPasswordPolicy, randomConfigBuilder.build() );
     }
 }
 

@@ -20,9 +20,11 @@
 
 package password.pwm;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import lombok.Builder;
 import lombok.Singular;
 import lombok.Value;
+import password.pwm.bean.SessionLabel;
 import password.pwm.config.AppConfig;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
@@ -30,12 +32,15 @@ import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.ContextManager;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.LazySupplier;
 import password.pwm.util.java.StringUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 
 import java.io.File;
-import java.io.FileInputStream;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -52,6 +57,8 @@ public class PwmEnvironment
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( PwmEnvironment.class );
 
+    private static final SessionLabel SESSION_LABEL = SessionLabel.SYSTEM_LABEL;
+
     @lombok.Builder.Default
     private PwmApplicationMode applicationMode = PwmApplicationMode.ERROR;
 
@@ -66,6 +73,8 @@ public class PwmEnvironment
 
     @Singular
     private Map<ApplicationParameter, String> parameters;
+
+    private final LazySupplier<DeploymentPlatform> deploymentPlatformLazySupplier = LazySupplier.create( this::determineDeploymentPlatform );
 
     public enum ApplicationParameter
     {
@@ -88,8 +97,6 @@ public class PwmEnvironment
 
     public enum ApplicationFlag
     {
-        Appliance,
-        Docker,
         ManageHttps,
         NoFileLock,
         CommandLineInstance,;
@@ -100,6 +107,14 @@ public class PwmEnvironment
         }
     }
 
+    public enum DeploymentPlatform
+    {
+        War,
+        Onejar,
+        Docker,
+        Appliance,;
+    }
+
     public enum EnvironmentParameter
     {
         applicationPath,
@@ -108,12 +123,12 @@ public class PwmEnvironment
 
         public String conicalJavaOptionSystemName( )
         {
-            return PwmConstants.PWM_APP_NAME.toLowerCase() + "." + this.toString();
+            return PwmConstants.PWM_APP_NAME.toLowerCase() + "." + this;
         }
 
         public String conicalEnvironmentSystemName( )
         {
-            return ( PwmConstants.PWM_APP_NAME.toLowerCase() + "_" + this.toString() ).toUpperCase();
+            return ( PwmConstants.PWM_APP_NAME.toLowerCase() + "_" + this ).toUpperCase();
         }
 
         public List<String> possibleNames( final String contextName )
@@ -126,21 +141,21 @@ public class PwmEnvironment
                         + "."
                         + contextName
                         + "."
-                        + this.toString();
+                        + this;
                 returnValues.add( value );
                 returnValues.add( value.toUpperCase() );
-                returnValues.add( value.replace( ".", "_" ) );
-                returnValues.add( value.toUpperCase().replace( ".", "_" ) );
+                returnValues.add( value.replace( '.', '_' ) );
+                returnValues.add( value.toUpperCase().replace( '.', '_' ) );
             }
             {
                 // java property format <app>.<paramName> like pwm.applicationFlag
                 final String value = PwmConstants.PWM_APP_NAME.toLowerCase()
                         + "."
-                        + this.toString();
+                        + this;
                 returnValues.add( value );
                 returnValues.add( value.toUpperCase() );
-                returnValues.add( value.replace( ".", "_" ) );
-                returnValues.add( value.toUpperCase().replace( ".", "_" ) );
+                returnValues.add( value.replace( '.', '_' ) );
+                returnValues.add( value.toUpperCase().replace( '.', '_' ) );
             }
 
             return Collections.unmodifiableList( returnValues );
@@ -166,14 +181,13 @@ public class PwmEnvironment
         }
         if ( applicationPathIsWebInfPath )
         {
-            LOGGER.trace( () -> "applicationPath appears to be servlet /WEB-INF directory" );
+            LOGGER.trace( SESSION_LABEL, () -> "applicationPath appears to be servlet /WEB-INF directory" );
         }
     }
 
     public PwmEnvironment makeRuntimeInstance(
             final AppConfig appConfig
     )
-            throws PwmUnrecoverableException
     {
         return this.toBuilder()
                 .applicationMode( PwmApplicationMode.READ_ONLY )
@@ -195,7 +209,7 @@ public class PwmEnvironment
             );
         }
 
-        LOGGER.trace( () -> "examining applicationPath of " + applicationPath.getAbsolutePath() + "" );
+        LOGGER.trace( SESSION_LABEL, () -> "examining applicationPath of " + applicationPath.getAbsolutePath() + "" );
 
         if ( !applicationPath.exists() )
         {
@@ -222,7 +236,7 @@ public class PwmEnvironment
         }
 
         final File infoFile = new File( applicationPath.getAbsolutePath() + File.separator + PwmConstants.APPLICATION_PATH_INFO_FILE );
-        LOGGER.trace( () -> "checking " + infoFile.getAbsolutePath() + " status" );
+        LOGGER.trace( SESSION_LABEL, () -> "checking " + infoFile.getAbsolutePath() + " status" );
         if ( infoFile.exists() )
         {
             final String errorMsg = "The file " + infoFile.getAbsolutePath() + " exists, and an applicationPath was not explicitly specified."
@@ -290,7 +304,7 @@ public class PwmEnvironment
 
             try
             {
-                final List<String> jsonValues = JsonUtil.deserializeStringList( input );
+                final List<String> jsonValues = JsonFactory.get().deserializeStringList( input );
                 final Set<ApplicationFlag> returnFlags = CollectionUtil.readEnumSetFromStringCollection( ApplicationFlag.class, jsonValues );
                 return Collections.unmodifiableSet( returnFlags );
             }
@@ -309,7 +323,7 @@ public class PwmEnvironment
                 }
                 else
                 {
-                    LOGGER.warn( () -> "unknown " + EnvironmentParameter.applicationFlags.toString() + " value: " + input );
+                    LOGGER.warn( SESSION_LABEL, () -> "unknown " + EnvironmentParameter.applicationFlags + " value: " + input );
                 }
             }
             return returnFlags;
@@ -323,14 +337,14 @@ public class PwmEnvironment
             }
 
             final Properties propValues = new Properties();
-            try ( FileInputStream fileInputStream = new FileInputStream( input ) )
+            try ( InputStream fileInputStream = Files.newInputStream( Path.of( input ) ) )
             {
                 propValues.load( fileInputStream );
             }
             catch ( final Exception e )
             {
-                LOGGER.warn( () -> "error reading properties file '" + input + "' specified by environment setting "
-                        + EnvironmentParameter.applicationParamFile.toString() + ", error: " + e.getMessage() );
+                LOGGER.warn( SESSION_LABEL, () -> "error reading properties file '" + input + "' specified by environment setting "
+                        + EnvironmentParameter.applicationParamFile + ", error: " + e.getMessage() );
             }
 
             try
@@ -338,22 +352,22 @@ public class PwmEnvironment
                 final Map<ApplicationParameter, String> returnParams = new EnumMap<>( ApplicationParameter.class );
                 for ( final Object key : propValues.keySet() )
                 {
-
-                    final ApplicationParameter param = ApplicationParameter.forString( key.toString() );
+                    final String keyString = key.toString();
+                    final ApplicationParameter param = ApplicationParameter.forString( keyString );
                     if ( param != null )
                     {
-                        returnParams.put( param, propValues.getProperty( key.toString() ) );
+                        returnParams.put( param, propValues.getProperty( keyString ) );
                     }
                     else
                     {
-                        LOGGER.warn( () -> "unknown " + EnvironmentParameter.applicationParamFile.toString() + " value: " + input );
+                        LOGGER.warn( SESSION_LABEL, () -> "unknown " + EnvironmentParameter.applicationParamFile + " value: " + input );
                     }
                 }
                 return Collections.unmodifiableMap( returnParams );
             }
             catch ( final Exception e )
             {
-                LOGGER.warn( () -> "unable to parse jason value of " + EnvironmentParameter.applicationParamFile.toString() + ", error: " + e.getMessage() );
+                LOGGER.warn( SESSION_LABEL, () -> "unable to parse jason value of " + EnvironmentParameter.applicationParamFile + ", error: " + e.getMessage() );
             }
 
             return Collections.emptyMap();
@@ -364,10 +378,33 @@ public class PwmEnvironment
     {
         if ( PwmConstants.TRIAL_MODE && mode == PwmApplicationMode.RUNNING )
         {
-            LOGGER.info( () -> "application is in trial mode" );
+            LOGGER.info( SESSION_LABEL, () -> "application is in trial mode" );
             return PwmApplicationMode.CONFIGURATION;
         }
 
         return mode;
+    }
+
+    public DeploymentPlatform getDeploymentPlatform()
+    {
+        return deploymentPlatformLazySupplier.get();
+    }
+
+    @SuppressFBWarnings( "DMI_HARDCODED_ABSOLUTE_FILENAME" )
+    private DeploymentPlatform determineDeploymentPlatform()
+    {
+        final File dockerEnvFile = new File( "/.dockerenv" );
+
+        if ( dockerEnvFile.exists() )
+        {
+            return DeploymentPlatform.Docker;
+        }
+
+        final String envValue = System.getProperty( "ONEJAR_ENV", "FALSE" );
+        if ( Boolean.getBoolean( envValue ) )
+        {
+            return DeploymentPlatform.Onejar;
+        }
+        return DeploymentPlatform.War;
     }
 }

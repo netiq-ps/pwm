@@ -34,7 +34,6 @@ import javax.servlet.ServletRequest;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.jsp.PageContext;
-import java.io.Serializable;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.util.Locale;
@@ -72,7 +71,7 @@ public abstract class JspUtility
         }
     }
 
-    public static Serializable getAttribute( final PageContext pageContext, final PwmRequestAttribute requestAttr )
+    public static Object getAttribute( final PageContext pageContext, final PwmRequestAttribute requestAttr )
     {
         final PwmRequest pwmRequest = forRequest( pageContext.getRequest() );
         return pwmRequest.getAttribute( requestAttr );
@@ -203,7 +202,7 @@ public abstract class JspUtility
         {
             return LocaleHelper.valueNotApplicable( pwmRequest.getLocale() );
         }
-        return "<span class=\"timestamp\">" + instant.toString() + "</span>";
+        return "<span class=\"timestamp\">" + instant + "</span>";
     }
 
     public static String localizedString( final PageContext pageContext, final String key, final Class<? extends PwmDisplayBundle> bundleClass, final String... values )

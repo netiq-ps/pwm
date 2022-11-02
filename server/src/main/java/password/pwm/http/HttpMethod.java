@@ -20,6 +20,8 @@
 
 package password.pwm.http;
 
+import password.pwm.util.java.EnumUtil;
+
 import java.util.Optional;
 
 public enum HttpMethod
@@ -42,14 +44,8 @@ public enum HttpMethod
 
     public static Optional<HttpMethod> fromString( final String input )
     {
-        for ( final HttpMethod method : HttpMethod.values() )
-        {
-            if ( method.toString().equalsIgnoreCase( input ) )
-            {
-                return Optional.of( method );
-            }
-        }
-        return Optional.empty();
+        return EnumUtil.readEnumFromPredicate( HttpMethod.class,
+                httpMethod -> httpMethod.toString().equalsIgnoreCase( input ) );
     }
 
     public boolean isIdempotent( )

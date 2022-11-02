@@ -21,12 +21,13 @@
 package password.pwm.svc.event;
 
 import password.pwm.PwmApplication;
+import password.pwm.bean.SessionLabel;
 import password.pwm.error.PwmException;
 import password.pwm.svc.PwmService;
 import password.pwm.util.PwmScheduler;
 import password.pwm.util.TransactionSizeCalculator;
-import password.pwm.util.java.JsonUtil;
-import password.pwm.util.java.Percent;
+import password.pwm.util.json.JsonFactory;
+import password.pwm.util.Percent;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBException;
@@ -35,7 +36,7 @@ import password.pwm.util.logging.PwmLogger;
 
 import java.time.Instant;
 import java.util.Iterator;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 
 public class LocalDbAuditVault implements AuditVault
 {
@@ -45,7 +46,7 @@ public class LocalDbAuditVault implements AuditVault
     private AuditSettings settings;
     private Instant oldestRecord;
 
-    private ExecutorService executorService;
+    private ScheduledExecutorService executorService;
     private volatile PwmService.STATUS status = PwmService.STATUS.CLOSED;
 
 
@@ -58,6 +59,7 @@ public class LocalDbAuditVault implements AuditVault
     @Override
     public void init(
             final PwmApplication pwmApplication,
+            final SessionLabel sessionLabel,
             final LocalDB localDB,
             final AuditSettings settings
     )
@@ -68,7 +70,7 @@ public class LocalDbAuditVault implements AuditVault
 
         readOldestRecord();
 
-        executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, this.getClass() );
+        executorService = PwmScheduler.makeBackgroundServiceExecutor( pwmApplication, sessionLabel, this.getClass() );
 
         status = PwmService.STATUS.OPEN;
         final TimeDuration jobFrequency = TimeDuration.of( 10, TimeDuration.Unit.MINUTES );
@@ -148,7 +150,7 @@ public class LocalDbAuditVault implements AuditVault
     {
         try
         {
-            return JsonUtil.deserialize( input, AuditRecordData.class );
+            return JsonFactory.get().deserialize( input, AuditRecordData.class );
         }
         catch ( final Exception e )
         {
@@ -167,7 +169,7 @@ public class LocalDbAuditVault implements AuditVault
             return;
         }
 
-        final String jsonRecord = JsonUtil.serialize( record );
+        final String jsonRecord = JsonFactory.get().serialize( record );
         auditDB.addLast( jsonRecord );
 
         if ( auditDB.size() > settings.getMaxRecords() )
@@ -181,7 +183,7 @@ public class LocalDbAuditVault implements AuditVault
         if ( auditDB != null && !auditDB.isEmpty() )
         {
             final String stringFirstRecord = auditDB.getFirst();
-            final AuditRecordData firstRecord = JsonUtil.deserialize( stringFirstRecord, AuditRecordData.class );
+            final AuditRecordData firstRecord = JsonFactory.get().deserialize( stringFirstRecord, AuditRecordData.class );
             oldestRecord = firstRecord.getTimestamp();
         }
     }
@@ -198,7 +200,7 @@ public class LocalDbAuditVault implements AuditVault
         // keep transaction duration around 100ms if possible.
         final TransactionSizeCalculator transactionSizeCalculator = new TransactionSizeCalculator(
                 TransactionSizeCalculator.Settings.builder()
-                        .durationGoal( TimeDuration.of( 101, TimeDuration.Unit.MILLISECONDS ) )
+                        .durationGoal( TimeDuration.of( 101, TimeDuration.Unit.MILLISECONDS ).asMillis() )
                         .maxTransactions( 5003 )
                         .minTransactions( 3 )
                         .build()
@@ -208,9 +210,8 @@ public class LocalDbAuditVault implements AuditVault
         public void run( )
         {
             long startTime = System.currentTimeMillis();
-            while ( trim( transactionSizeCalculator.getTransactionSize() )
-                    && status == PwmService.STATUS.OPEN
-                    )
+            while ( status == PwmService.STATUS.OPEN
+                    && trim( transactionSizeCalculator.getTransactionSize() ) )
             {
                 final long executeTime = System.currentTimeMillis() - startTime;
                 transactionSizeCalculator.recordLastTransactionDuration( executeTime );

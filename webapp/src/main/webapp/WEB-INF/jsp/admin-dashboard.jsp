@@ -41,6 +41,7 @@
 <%@ page import="password.pwm.http.bean.DisplayElement" %>
 <%@ page import="password.pwm.PwmDomain" %>
 <%@ page import="password.pwm.util.java.CollectionUtil" %>
+<%@ page import="password.pwm.util.java.PwmUtil" %>
 <!DOCTYPE html>
 <%@ page language="java" session="true" isThreadSafe="true" contentType="text/html" %>
 <%@ taglib uri="pwm" prefix="pwm" %>
@@ -209,9 +210,9 @@
                             <td>
                                 <% if (ldapProfiles.size() < 2) { %>
                                 <% final Instant lastError = dashboard_pwmDomain
-                                        .getLdapConnectionService().getLastLdapFailureTime(ldapProfiles.iterator().next()); %>
+                                        .getLdapService().getLastLdapFailureTime(ldapProfiles.iterator().next()); %>
                                 <span class="timestamp">
-                                <%= lastError == null ? JspUtility.getMessage(pageContext, Display.Value_NotApplicable) :JavaHelper.toIsoDate(lastError) %>
+                                <%= lastError == null ? JspUtility.getMessage(pageContext, Display.Value_NotApplicable) : StringUtil.toIsoDate(lastError) %>
                                 </span>
                                 <% } else { %>
                                 <table class="nomargin">
@@ -219,8 +220,8 @@
                                     <tr>
                                         <td><%=ldapProfile.getDisplayName(locale)%></td>
                                         <td class="timestamp">
-                                            <% final Instant lastError = dashboard_pwmDomain.getLdapConnectionService().getLastLdapFailureTime(ldapProfile); %>
-                                            <%= lastError == null ? JspUtility.getMessage(pageContext, Display.Value_NotApplicable) :JavaHelper.toIsoDate(lastError) %>
+                                            <% final Instant lastError = dashboard_pwmDomain.getLdapService().getLastLdapFailureTime(ldapProfile); %>
+                                            <%= lastError == null ? JspUtility.getMessage(pageContext, Display.Value_NotApplicable) : StringUtil.toIsoDate(lastError) %>
                                         </td>
                                     </tr>
                                     <% } %>
@@ -474,7 +475,7 @@
                     <% } %>
                 </div>
                 <% } else { %>
-                <div class="footnote">Node data is not yet available.</div>
+                <div class="footnote">Node data is not yet available, please check again in a few minutes.</div>
                 <% } %>
             </div>
 

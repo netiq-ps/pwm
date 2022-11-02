@@ -34,7 +34,7 @@ import password.pwm.error.PwmException;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.health.HealthRecord;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.ldap.permission.UserPermissionUtility;
 import password.pwm.svc.AbstractPwmService;
@@ -46,8 +46,9 @@ import password.pwm.util.java.AverageTracker;
 import password.pwm.util.java.BlockingThreadPool;
 import password.pwm.util.java.ClosableIterator;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBException;
 import password.pwm.util.localdb.LocalDBStoredQueue;
@@ -62,7 +63,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
@@ -77,7 +77,6 @@ public class ReportService extends AbstractPwmService implements PwmService
 
     private final AtomicBoolean cancelFlag = new AtomicBoolean( false );
     private ReportSummaryData summaryData = ReportSummaryData.newSummaryData( null );
-    private ExecutorService executorService;
 
     private ReportRecordLocalDBStorageService userCacheService;
     private ReportSettings settings = ReportSettings.builder().build();
@@ -85,7 +84,7 @@ public class ReportService extends AbstractPwmService implements PwmService
     private Queue<String> dnQueue;
 
     private final AtomicReference<ReportStatusInfo> reportStatus = new AtomicReference<>( ReportStatusInfo.builder().build() );
-    private final EventRateMeter processRateMeter = new EventRateMeter( TimeDuration.of( 5, TimeDuration.Unit.MINUTES ) );
+    private final EventRateMeter processRateMeter = new EventRateMeter( TimeDuration.of( 5, TimeDuration.Unit.MINUTES ).asDuration() );
 
 
     public ReportService( )
@@ -118,30 +117,24 @@ public class ReportService extends AbstractPwmService implements PwmService
 
         dnQueue = LocalDBStoredQueue.createLocalDBStoredQueue( pwmApplication, getPwmApplication().getLocalDB(), LocalDB.DB.REPORT_QUEUE );
 
-        executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, this.getClass() );
-
         if ( !pwmApplication.getPwmEnvironment().isInternalRuntimeInstance() )
         {
-            executorService.submit( new InitializationTask() );
+            scheduleJob( new InitializationTask() );
         }
 
         return STATUS.OPEN;
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         setStatus( STATUS.CLOSED );
         cancelFlag.set( true );
 
-        JavaHelper.closeAndWaitExecutor( executorService, TimeDuration.SECONDS_10 );
-
         if ( userCacheService != null )
         {
-            userCacheService.close();
+            userCacheService.shutdown();
         }
-
-        executorService = null;
     }
 
     private void writeReportStatus( )
@@ -185,8 +178,8 @@ public class ReportService extends AbstractPwmService implements PwmService
                         && localReportStatus.getCurrentProcess() != ReportStatusInfo.ReportEngineProcess.SearchLDAP
                 )
                 {
-                    executorService.execute( new ClearTask() );
-                    executorService.execute( new ReadLDAPTask() );
+                    scheduleJob( new ClearTask() );
+                    scheduleJob( new ReadLDAPTask() );
                 }
             }
             break;
@@ -201,18 +194,18 @@ public class ReportService extends AbstractPwmService implements PwmService
             case Clear:
             {
                 cancelFlag.set( true );
-                executorService.execute( new ClearTask() );
+                scheduleJob( new ClearTask() );
             }
             break;
 
             default:
-                JavaHelper.unhandledSwitchStatement( reportCommand );
+                PwmUtil.unhandledSwitchStatement( reportCommand );
         }
     }
 
     public BigDecimal getEventRate( )
     {
-        return processRateMeter.readEventRate();
+        return processRateMeter.rawEps();
     }
 
     public long getTotalRecords( )
@@ -323,7 +316,7 @@ public class ReportService extends AbstractPwmService implements PwmService
             try
             {
                 readUserListFromLdap();
-                executorService.execute( new ProcessWorkQueueTask() );
+                scheduleJob( new ProcessWorkQueueTask() );
             }
             catch ( final Exception e )
             {
@@ -332,13 +325,10 @@ public class ReportService extends AbstractPwmService implements PwmService
                 {
                     if ( ( ( PwmException ) e ).getErrorInformation().getError() == PwmError.ERROR_DIRECTORY_UNAVAILABLE )
                     {
-                        if ( executorService != null )
-                        {
                             LOGGER.error( getSessionLabel(),
                                     () -> "directory unavailable error during background SearchLDAP, will retry; error: " + e.getMessage() );
-                            getPwmApplication().getPwmScheduler().scheduleJob( new ReadLDAPTask(), executorService, TimeDuration.of( 10, TimeDuration.Unit.MINUTES ) );
+                            scheduleJob( new ReadLDAPTask(), TimeDuration.of( 10, TimeDuration.Unit.MINUTES ) );
                             errorProcessed = true;
-                        }
                     }
                 }
 
@@ -378,7 +368,7 @@ public class ReportService extends AbstractPwmService implements PwmService
                 LOGGER.trace(
                         getSessionLabel(),
                         () -> "completed ldap search process with for domain '" + pwmDomain.getDomainID() + "'",
-                        () -> TimeDuration.fromCurrent( loopStartTime ) );
+                        TimeDuration.fromCurrent( loopStartTime ) );
 
                 writeUsersToLocalDBQueue( searchResults );
             }
@@ -386,7 +376,7 @@ public class ReportService extends AbstractPwmService implements PwmService
             LOGGER.trace(
                     getSessionLabel(),
                     () -> "completed ldap search process with entries for " + getPwmApplication().domains().size() + " domains",
-                    () -> TimeDuration.fromCurrent( startTime ) );
+                    TimeDuration.fromCurrent( startTime ) );
 
         }
 
@@ -397,7 +387,7 @@ public class ReportService extends AbstractPwmService implements PwmService
 
             final TransactionSizeCalculator transactionCalculator = new TransactionSizeCalculator(
                     TransactionSizeCalculator.Settings.builder()
-                            .durationGoal( TimeDuration.SECOND )
+                            .durationGoal( TimeDuration.SECOND.asMillis() )
                             .minTransactions( 10 )
                             .maxTransactions( 100 * 1000 )
                             .build()
@@ -410,13 +400,13 @@ public class ReportService extends AbstractPwmService implements PwmService
                 final int loopCount = transactionCalculator.getTransactionSize();
                 while ( !cancelFlag.get() && identityQueue.hasNext() && bufferList.size() < loopCount )
                 {
-                    bufferList.add( identityQueue.next().toDelimitedKey() );
+                    bufferList.add( JsonFactory.get().serialize( identityQueue.next() ) );
                 }
                 dnQueue.addAll( bufferList );
-                transactionCalculator.recordLastTransactionDuration( TimeDuration.fromCurrent( loopStart ) );
+                transactionCalculator.recordLastTransactionDuration( TimeDuration.fromCurrent( loopStart ).asDuration() );
             }
             LOGGER.trace( getSessionLabel(),
-                    () -> "completed transfer of ldap search results to work queue", () -> TimeDuration.fromCurrent( startTime ) );
+                    () -> "completed transfer of ldap search results to work queue", TimeDuration.fromCurrent( startTime ) );
         }
     }
 
@@ -446,12 +436,8 @@ public class ReportService extends AbstractPwmService implements PwmService
             {
                 if ( e.getErrorInformation().getError() == PwmError.ERROR_DIRECTORY_UNAVAILABLE )
                 {
-                    if ( executorService != null )
-                    {
                         LOGGER.error( getSessionLabel(), () -> "directory unavailable error during background ReadData, will retry; error: " + e.getMessage() );
-                        getPwmApplication().getPwmScheduler().scheduleJob(
-                                new ProcessWorkQueueTask(), executorService, TimeDuration.of( 10, TimeDuration.Unit.MINUTES ) );
-                    }
+                        scheduleJob( new ProcessWorkQueueTask(), TimeDuration.of( 10, TimeDuration.Unit.MINUTES ) );
                 }
                 else
                 {
@@ -490,11 +476,11 @@ public class ReportService extends AbstractPwmService implements PwmService
             try
             {
                 LOGGER.trace( getSessionLabel(), () -> "about to begin ldap processing with thread count of " + threadCount );
-                final String threadName = PwmScheduler.makeThreadName( getPwmApplication(), this.getClass() );
+                final String threadName = PwmScheduler.makeThreadName( getSessionLabel(), getPwmApplication(), this.getClass() );
                 final BlockingThreadPool threadService = new BlockingThreadPool( threadCount, threadName );
                 while ( status() == STATUS.OPEN && !dnQueue.isEmpty() && !cancelFlag.get() )
                 {
-                    final UserIdentity userIdentity = UserIdentity.fromDelimitedKey( getSessionLabel(), dnQueue.poll() );
+                    final UserIdentity userIdentity = JsonFactory.get().deserialize( dnQueue.poll(), UserIdentity.class );
                     if ( getPwmApplication().getConfig().isDevDebugMode() )
                     {
                         LOGGER.trace( getSessionLabel(), () -> "submit " + Instant.now().toString()
@@ -536,7 +522,7 @@ public class ReportService extends AbstractPwmService implements PwmService
                         .build() );
                 writeReportStatus();
             }
-            LOGGER.debug( getSessionLabel(), () -> "update user cache process completed: " + JsonUtil.serialize( reportStatus ) );
+            LOGGER.debug( getSessionLabel(), () -> "update user cache process completed: " + JsonFactory.get().serialize( reportStatus ) );
         }
 
 
@@ -561,9 +547,9 @@ public class ReportService extends AbstractPwmService implements PwmService
             {
                 userCacheService.store( newUserReportRecord.get() );
                 summaryData.update( newUserReportRecord.get() );
-                processRateMeter.markEvents( 1 );
+                processRateMeter.markEvent();
 
-                LOGGER.trace( getSessionLabel(), () -> "stored cache for " + userIdentity, () -> TimeDuration.fromCurrent( startTime ) );
+                LOGGER.trace( getSessionLabel(), () -> "stored cache for " + userIdentity, TimeDuration.fromCurrent( startTime ) );
             }
         }
 
@@ -642,8 +628,8 @@ public class ReportService extends AbstractPwmService implements PwmService
 
             if ( settings.isDailyJobEnabled() )
             {
-                executorService.execute( new ClearTask() );
-                executorService.execute( new ReadLDAPTask() );
+                scheduleJob( new ClearTask() );
+                scheduleJob( new ReadLDAPTask() );
             }
         }
     }
@@ -660,7 +646,7 @@ public class ReportService extends AbstractPwmService implements PwmService
                 restTime.pause();
 
                 initTempData();
-                LOGGER.debug( getSessionLabel(), () -> "report service initialized: " + JsonUtil.serialize( reportStatus.get() ) );
+                LOGGER.debug( getSessionLabel(), () -> "report service initialized: " + JsonFactory.get().serialize( reportStatus.get() ) );
             }
             catch ( final PwmUnrecoverableException e )
             {
@@ -673,7 +659,7 @@ public class ReportService extends AbstractPwmService implements PwmService
             if ( reportingEnabled )
             {
                 final TimeDuration jobOffset = TimeDuration.of( settings.getJobOffsetSeconds(), TimeDuration.Unit.SECONDS );
-                getPwmApplication().getPwmScheduler().scheduleDailyZuluZeroStartJob( new DailyJobExecuteTask(), executorService, jobOffset );
+                scheduleJob( new DailyJobExecuteTask(), jobOffset );
             }
         }
 
@@ -728,7 +714,7 @@ public class ReportService extends AbstractPwmService implements PwmService
             if ( !reportStatus.get().isReportComplete() && !dnQueue.isEmpty() )
             {
                 LOGGER.trace( getSessionLabel(), () -> "resuming report data processing" );
-                executorService.execute( new ProcessWorkQueueTask() );
+                scheduleJob( new ProcessWorkQueueTask() );
             }
         }
     }
@@ -791,7 +777,7 @@ public class ReportService extends AbstractPwmService implements PwmService
         final Instant lastFinishDate = reportStatus.get().getFinishDate();
         if ( lastFinishDate != null && TimeDuration.fromCurrent( lastFinishDate ).isLongerThan( settings.getMaxCacheAge() ) )
         {
-            executorService.execute( new ClearTask() );
+            scheduleJob( new ClearTask() );
         }
     }
 }

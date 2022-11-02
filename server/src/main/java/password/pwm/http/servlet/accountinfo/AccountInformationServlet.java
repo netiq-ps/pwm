@@ -56,6 +56,12 @@ public class AccountInformationServlet extends ControlledPwmServlet
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( AccountInformationServlet.class );
 
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
+
     public enum AccountInformationAction implements AbstractPwmServlet.ProcessAction
     {
         read( HttpMethod.GET ),;
@@ -114,7 +120,7 @@ public class AccountInformationServlet extends ControlledPwmServlet
                 pwmRequest.getPwmSession().getUserInfo(),
                 pwmRequest.getLocale()
         );
-        pwmRequest.outputJsonResult( RestResultBean.withData( accountInformationBean ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( accountInformationBean, AccountInformationBean.class ) );
         return ProcessStatus.Halt;
     }
 

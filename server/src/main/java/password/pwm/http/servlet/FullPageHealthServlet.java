@@ -51,6 +51,12 @@ public class FullPageHealthServlet extends ControlledPwmServlet
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( FullPageHealthServlet.class );
 
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
+
     public enum FullPageHealthAction implements AbstractPwmServlet.ProcessAction
     {
         value( HttpMethod.GET ),;
@@ -87,7 +93,7 @@ public class FullPageHealthServlet extends ControlledPwmServlet
             throws PwmUnrecoverableException, IOException, ServletException
     {
         forwardToJSP( pwmRequest );
-        pwmRequest.getPwmSession().unauthenticateUser( pwmRequest );
+        pwmRequest.getPwmSession().unAuthenticateUser( pwmRequest );
     }
 
     @Override
@@ -117,7 +123,7 @@ public class FullPageHealthServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "value" )
-    private ProcessStatus bogusValueHandler( final PwmRequest pwmRequest )
+    public ProcessStatus bogusValueHandler( final PwmRequest pwmRequest )
     {
         // bogus method to satisfy test case
         return ProcessStatus.Continue;

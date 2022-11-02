@@ -22,6 +22,7 @@ package password.pwm.http.servlet;
 
 import com.novell.ldapchai.exception.ChaiUnavailableException;
 import password.pwm.PwmConstants;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.UserIdentity;
 import password.pwm.config.PwmSetting;
 import password.pwm.error.ErrorInformation;
@@ -53,6 +54,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * User interaction servlet for form-based authentication.   Depending on how PWM is deployed,
@@ -72,6 +74,13 @@ import java.util.Map;
 public class LoginServlet extends ControlledPwmServlet
 {
     private static final PwmLogger LOGGER = PwmLogger.getLogger( LoginServlet.class.getName() );
+
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
+
 
     public enum LoginServletAction implements ProcessAction
     {
@@ -128,7 +137,7 @@ public class LoginServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "login" )
-    private ProcessStatus processLogin( final PwmRequest pwmRequest )
+    public ProcessStatus processLogin( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, ServletException, IOException, ChaiUnavailableException
     {
         final boolean passwordOnly = passwordOnly( pwmRequest );
@@ -150,7 +159,7 @@ public class LoginServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "restLogin" )
-    private ProcessStatus processRestLogin( final PwmRequest pwmRequest )
+    public ProcessStatus processRestLogin( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, ServletException, IOException, ChaiUnavailableException
     {
         final boolean passwordOnly = passwordOnly( pwmRequest );
@@ -180,14 +189,14 @@ public class LoginServlet extends ControlledPwmServlet
         // login has succeeded
         final String nextLoginUrl = determinePostLoginUrl( pwmRequest );
         final HashMap<String, String> resultMap = new HashMap<>( Collections.singletonMap( "nextURL", nextLoginUrl ) );
-        final RestResultBean restResultBean = RestResultBean.withData( resultMap );
+        final RestResultBean<Map> restResultBean = RestResultBean.withData( resultMap, Map.class );
         LOGGER.debug( pwmRequest, () -> "rest login succeeded" );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "receiveUrl" )
-    private ProcessStatus processReceiveUrl( final PwmRequest pwmRequest )
+    public ProcessStatus processReceiveUrl( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException
     {
         final String encryptedNextUrl = pwmRequest.readParameterAsString( PwmConstants.PARAM_POST_LOGIN_URL );
@@ -219,7 +228,10 @@ public class LoginServlet extends ControlledPwmServlet
                 ? new PasswordData( passwordStr )
                 : null;
         final String context = valueMap.get( PwmConstants.PARAM_CONTEXT );
-        final String ldapProfile = valueMap.get( PwmConstants.PARAM_LDAP_PROFILE );
+
+        final Optional<ProfileID> ldapProfile = pwmRequest.getPwmDomain().getConfig()
+                .ldapProfileForStringId( valueMap.get( PwmConstants.PARAM_LDAP_PROFILE ) );
+
         final String recaptchaResponse = valueMap.get( CaptchaUtility.PARAM_RECAPTCHA_FORM_NAME );
 
 
@@ -254,7 +266,7 @@ public class LoginServlet extends ControlledPwmServlet
         }
         else
         {
-            sessionAuthenticator.searchAndAuthenticateUser( username, password, context, ldapProfile );
+            sessionAuthenticator.searchAndAuthenticateUser( username, password, context, ldapProfile.orElse( null ) );
         }
 
         // if here then login was successful

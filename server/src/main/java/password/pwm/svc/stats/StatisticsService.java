@@ -29,9 +29,12 @@ import password.pwm.error.PwmException;
 import password.pwm.health.HealthRecord;
 import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
+import password.pwm.util.DailySummaryJob;
 import password.pwm.util.EventRateMeter;
-import password.pwm.util.PwmScheduler;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.CollectorUtil;
+import password.pwm.util.java.EnumUtil;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBException;
@@ -43,14 +46,14 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
+import java.util.stream.Collectors;
 
 public class StatisticsService extends AbstractPwmService implements PwmService
 {
@@ -74,12 +77,10 @@ public class StatisticsService extends AbstractPwmService implements PwmService
     private DailyKey currentDailyKey = DailyKey.forToday();
     private DailyKey initialDailyKey = DailyKey.forToday();
 
-    private ExecutorService executorService;
-
     private final StatisticsBundle statsCurrent = new StatisticsBundle();
+    private final Map<EpsKey, EventRateMeter> epsMeterMap;
     private StatisticsBundle statsDaily = new StatisticsBundle();
     private StatisticsBundle statsCummulative = new StatisticsBundle();
-    private Map<EpsKey, EventRateMeter> epsMeterMap = new HashMap<>();
 
 
     private final Map<String, StatisticsBundle> cachedStoredStats = new LinkedHashMap<>()
@@ -93,10 +94,11 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
     public StatisticsService( )
     {
-        for ( final EpsKey epsKey : EpsKey.allKeys() )
-        {
-            epsMeterMap.put( epsKey, new EventRateMeter( epsKey.getEpsDuration().getTimeDuration() ) );
-        }
+        epsMeterMap = EpsKey.allKeys().stream()
+                .map( key -> Map.entry( key, new EventRateMeter( key.getEpsDuration().getTimeDuration().asDuration() ) ) )
+                .collect( Collectors.toUnmodifiableMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue ) );
     }
 
     public void incrementValue( final Statistic statistic )
@@ -145,7 +147,7 @@ public class StatisticsService extends AbstractPwmService implements PwmService
             return statsCurrent;
         }
 
-        if ( currentDailyKey.toString().equals( key ) )
+        if ( Objects.equals( currentDailyKey.toString(), key ) )
         {
             return statsDaily;
         }
@@ -204,8 +206,8 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
         for ( final Statistic m : Statistic.values() )
         {
-            sb.append( m.toString() );
-            sb.append( "=" );
+            sb.append( m );
+            sb.append( '=' );
             sb.append( statsCurrent.getStatistic( m ) );
             sb.append( ", " );
         }
@@ -240,7 +242,7 @@ public class StatisticsService extends AbstractPwmService implements PwmService
                 }
                 catch ( final Exception e )
                 {
-                    LOGGER.warn( () -> "error loading saved stored cumulative statistics: " + e.getMessage() );
+                    LOGGER.warn( getSessionLabel(), () -> "error loading saved stored cumulative statistics: " + e.getMessage() );
                 }
             }
         }
@@ -258,7 +260,7 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
         try
         {
-            localDB.put( LocalDB.DB.PWM_STATS, DB_KEY_TEMP, JavaHelper.toIsoDate( Instant.now() ) );
+            localDB.put( LocalDB.DB.PWM_STATS, DB_KEY_TEMP, StringUtil.toIsoDate( Instant.now() ) );
         }
         catch ( final IllegalStateException e )
         {
@@ -271,9 +273,9 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
         {
             // setup a timer to roll over at 0 Zulu and one to write current stats regularly
-            executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, this.getClass() );
-            pwmApplication.getPwmScheduler().scheduleFixedRateJob( new FlushTask(), executorService, DB_WRITE_FREQUENCY, DB_WRITE_FREQUENCY );
-            pwmApplication.getPwmScheduler().scheduleDailyZuluZeroStartJob( new NightlyTask(), executorService, TimeDuration.ZERO );
+            scheduleDailyZuluZeroStartJob( new DailySummaryJob( pwmApplication ), TimeDuration.ZERO );
+            scheduleFixedRateJob( new FlushTask(), DB_WRITE_FREQUENCY, DB_WRITE_FREQUENCY );
+            scheduleDailyZuluZeroStartJob( new NightlyTask(), TimeDuration.ZERO );
         }
 
         return STATUS.OPEN;
@@ -299,15 +301,10 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
     public Map<String, String> dailyStatisticsAsLabelValueMap()
     {
-        final Map<String, String> emailValues = new LinkedHashMap<>();
-        for ( final Statistic statistic : Statistic.values() )
-        {
-            final String key = statistic.getLabel( PwmConstants.DEFAULT_LOCALE );
-            final String value = statsDaily.getStatistic( statistic );
-            emailValues.put( key, value );
-        }
-
-        return Collections.unmodifiableMap( emailValues );
+        return EnumUtil.enumStream( Statistic.class )
+                .collect( CollectorUtil.toUnmodifiableLinkedMap(
+                        statistic -> statistic.getLabel( PwmConstants.DEFAULT_LOCALE ),
+                        statistic -> statsDaily.getStatistic( statistic ) ) );
     }
 
     private void resetDailyStats( )
@@ -318,7 +315,7 @@ public class StatisticsService extends AbstractPwmService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         try
         {
@@ -329,8 +326,6 @@ public class StatisticsService extends AbstractPwmService implements PwmService
             LOGGER.error( () -> "unexpected error closing: " + e.getMessage() );
         }
 
-        JavaHelper.closeAndWaitExecutor( executorService, TimeDuration.of( 3, TimeDuration.Unit.SECONDS ) );
-
         setStatus( STATUS.CLOSED );
     }
 
@@ -339,7 +334,6 @@ public class StatisticsService extends AbstractPwmService implements PwmService
     {
         return Collections.emptyList();
     }
-
 
     private class NightlyTask extends TimerTask
     {
@@ -372,7 +366,7 @@ public class StatisticsService extends AbstractPwmService implements PwmService
     public BigDecimal readEps( final EpsStatistic type, final Statistic.EpsDuration duration )
     {
         final EpsKey epsKey = new EpsKey( type, duration );
-        return epsMeterMap.get( epsKey ).readEventRate();
+        return epsMeterMap.get( epsKey ).rawEps();
     }
 
 
@@ -383,18 +377,18 @@ public class StatisticsService extends AbstractPwmService implements PwmService
         final Instant startTime = Instant.now();
 
         final StatisticsService statsManger = getPwmApplication().getStatisticsManager();
-        final CSVPrinter csvPrinter = JavaHelper.makeCsvPrinter( outputStream );
+        final CSVPrinter csvPrinter = PwmUtil.makeCsvPrinter( outputStream );
 
         if ( includeHeader )
         {
-            final List<String> headers = new ArrayList<>();
+            final List<String> headers = Statistic.asSet().stream()
+                    .map( stat -> stat.getLabel( locale ) )
+                    .collect( Collectors.toList() );
+
             headers.add( "KEY" );
             headers.add( "YEAR" );
             headers.add( "DAY" );
-            for ( final Statistic stat : Statistic.values() )
-            {
-                headers.add( stat.getLabel( locale ) );
-            }
+
             csvPrinter.printRecord( headers );
         }
 
@@ -404,14 +398,17 @@ public class StatisticsService extends AbstractPwmService implements PwmService
         {
             counter++;
             final StatisticsBundle bundle = statsManger.getStatBundleForKey( loopKey.toString() );
-            final List<String> lineOutput = new ArrayList<>();
+
+            final List<String> lineOutput = new ArrayList<>( Statistic.asSet().size() );
+
             lineOutput.add( loopKey.toString() );
             lineOutput.add( String.valueOf( loopKey.getYear() ) );
             lineOutput.add( String.valueOf( loopKey.getDay() ) );
-            for ( final Statistic stat : Statistic.values() )
-            {
-                lineOutput.add( bundle.getStatistic( stat ) );
-            }
+
+            lineOutput.addAll( EnumUtil.enumStream( Statistic.class )
+                    .map( bundle::getStatistic )
+                    .collect( Collectors.toList() ) );
+
             csvPrinter.printRecord( lineOutput );
         }
 

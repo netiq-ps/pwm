@@ -32,9 +32,9 @@ import password.pwm.config.profile.HelpdeskProfile;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmRequest;
 import password.pwm.http.servlet.peoplesearch.PhotoDataReader;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
@@ -82,7 +82,7 @@ public class HelpdeskCardInfoBean implements Serializable
                 theUser.getChaiProvider()
         );
 
-        builder.userKey( userIdentity.toObfuscatedKey( pwmRequest.getPwmApplication() ) );
+        builder.userKey( HelpdeskServletUtil.obfuscateUserIdentity( pwmRequest, userIdentity ) );
 
         final PhotoDataReader photoDataReader = HelpdeskServlet.photoDataReader( pwmRequest, helpdeskProfile, userIdentity );
         final Optional<String> optionalPhotoUrl = photoDataReader.figurePhotoURL();
@@ -96,7 +96,7 @@ public class HelpdeskCardInfoBean implements Serializable
         if ( pwmRequest.getAppConfig().isDevDebugMode() )
         {
             LOGGER.trace( pwmRequest, () -> "completed assembly of card data report for user " + userIdentity
-                    + " in " + timeDuration.asCompactString() + ", contents: " + JsonUtil.serialize( helpdeskCardInfoBean ) );
+                    + " in " + timeDuration.asCompactString() + ", contents: " + JsonFactory.get().serialize( helpdeskCardInfoBean ) );
         }
 
         return builder.build();

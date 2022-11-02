@@ -25,7 +25,7 @@ import password.pwm.AppProperty;
 import password.pwm.config.AppConfig;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.secure.CertificateReadingTrustManager;
 import password.pwm.util.secure.PromiscuousTrustManager;
 import password.pwm.util.secure.PwmHashAlgorithm;
@@ -109,7 +109,7 @@ class HttpTrustManagerHelper
             }
 
             default:
-                JavaHelper.unhandledSwitchStatement( trustManagerType );
+                PwmUtil.unhandledSwitchStatement( trustManagerType );
 
         }
 
@@ -123,18 +123,18 @@ class HttpTrustManagerHelper
 
         if ( PwmHttpClientConfiguration.TrustManagerType.configuredCertificates == type )
         {
-            value.append( "=" );
+            value.append( '=' );
             for ( final Iterator<X509Certificate> iterator = pwmHttpClientConfiguration.getCertificates().iterator(); iterator.hasNext(); )
             {
                 final X509Certificate certificate = iterator.next();
                 value.append( X509Utils.hash( certificate, PwmHashAlgorithm.SHA1 ) );
                 if ( iterator.hasNext() )
                 {
-                    value.append( "," );
+                    value.append( ',' );
                 }
             }
         }
-        value.append( "]" );
+        value.append( ']' );
         return value.toString();
     }
 }

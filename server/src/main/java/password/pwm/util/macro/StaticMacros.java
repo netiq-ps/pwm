@@ -24,7 +24,7 @@ import password.pwm.PwmConstants;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.PwmSettingCategory;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.secure.PwmHashAlgorithm;
 import password.pwm.util.secure.SecureEngine;
@@ -159,13 +159,13 @@ public abstract class StaticMacros
                         return StringUtil.base64Encode( input.getBytes( PwmConstants.DEFAULT_CHARSET ) );
 
                     default:
-                        throw new MacroParseException( "unimplemented encodeType '" + this.toString() + "' for Encode macro" );
+                        throw new MacroParseException( "unimplemented encodeType '" + this + "' for Encode macro" );
                 }
             }
 
             private static Optional<EncodeType> forString( final String input )
             {
-                return JavaHelper.readEnumFromPredicate( EncodeType.class, type -> type.toString().equalsIgnoreCase( input ) );
+                return EnumUtil.readEnumFromPredicate( EncodeType.class, type -> type.toString().equalsIgnoreCase( input ) );
             }
         }
 
@@ -251,7 +251,7 @@ public abstract class StaticMacros
                         return doHash( input, PwmHashAlgorithm.SHA512 );
 
                     default:
-                        throw new MacroParseException( "unimplemented hashtype '" + this.toString() + "' for Hash macro" );
+                        throw new MacroParseException( "unimplemented hashtype '" + this + "' for Hash macro" );
                 }
             }
 
@@ -277,7 +277,7 @@ public abstract class StaticMacros
 
             private static Optional<HashType> forString( final String input )
             {
-                return JavaHelper.readEnumFromPredicate( HashType.class, type -> type.toString().equalsIgnoreCase( input ) );
+                return EnumUtil.readEnumFromPredicate( HashType.class, type -> type.toString().equalsIgnoreCase( input ) );
             }
         }
 
@@ -351,13 +351,13 @@ public abstract class StaticMacros
                                 : input.toLowerCase();
 
                     default:
-                        throw new MacroParseException( "unimplemented casetype '" + this.toString() + "' for Case macro" );
+                        throw new MacroParseException( "unimplemented casetype '" + this + "' for Case macro" );
                 }
             }
 
             private static Optional<CaseType> forString( final String input )
             {
-                return JavaHelper.readEnumFromPredicate( CaseType.class, type -> type.toString().equalsIgnoreCase( input ) );
+                return EnumUtil.readEnumFromPredicate( CaseType.class, type -> type.toString().equalsIgnoreCase( input ) );
             }
         }
 

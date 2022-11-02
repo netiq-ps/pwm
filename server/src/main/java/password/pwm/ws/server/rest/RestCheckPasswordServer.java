@@ -34,12 +34,12 @@ import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.HttpContentType;
 import password.pwm.http.HttpMethod;
 import password.pwm.http.PwmHttpRequestWrapper;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.util.PasswordData;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
@@ -204,9 +204,10 @@ public class RestCheckPasswordServer extends RestServlet
             );
 
             final JsonOutput jsonOutput = JsonOutput.fromPasswordCheckInfo( passwordCheckInfo );
-            final RestResultBean restResultBean = RestResultBean.withData( jsonOutput );
+            final RestResultBean restResultBean = RestResultBean.withData( jsonOutput, JsonOutput.class );
             final TimeDuration timeDuration = TimeDuration.fromCurrent( startTime );
-            LOGGER.trace( restRequest.getSessionLabel(), () -> "REST /checkpassword response (" + timeDuration.asCompactString() + "): " + JsonUtil.serialize( jsonOutput ) );
+            LOGGER.trace( restRequest.getSessionLabel(), () -> "REST /checkpassword response ("
+                    + timeDuration.asCompactString() + "): " + JsonFactory.get().serialize( jsonOutput ) );
             return restResultBean;
         }
         catch ( final PwmException e )
@@ -218,7 +219,7 @@ public class RestCheckPasswordServer extends RestServlet
         {
             final String errorMessage = "unexpected error executing web service: " + e.getMessage();
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_INTERNAL, errorMessage );
-            LOGGER.error( restRequest.getSessionLabel(), () -> errorInformation.toDebugStr(), e );
+            LOGGER.error( restRequest.getSessionLabel(), errorInformation::toDebugStr, e );
             return RestResultBean.fromError( restRequest, errorInformation );
         }
     }

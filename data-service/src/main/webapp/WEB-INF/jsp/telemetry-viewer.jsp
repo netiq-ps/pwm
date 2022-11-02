@@ -26,18 +26,28 @@
 <%@ page import="java.time.Instant" %>
 <%@ page import="password.pwm.receiver.PwmReceiverApp" %>
 <%@ page import="password.pwm.receiver.ContextManager" %>
+<%@ page import="password.pwm.util.java.StringUtil" %>
+<%@ page import="java.util.Map" %>
+<%@ page import="java.time.Duration" %>
+<%@ page import="password.pwm.util.java.PwmNumberFormat" %>
 
 <!DOCTYPE html>
 <%@ page contentType="text/html" %>
 <% SummaryBean summaryBean = (SummaryBean)request.getAttribute(TelemetryViewerServlet.SUMMARY_ATTR); %>
 <% PwmReceiverApp app = ContextManager.getContextManager(request.getServletContext()).getApp(); %>
+<% PwmNumberFormat format = PwmNumberFormat.forLocale( request.getLocale() ); %>
 <html>
 <head>
     <title>Telemetry Data</title>
+    <link href="data-service-style.css" rel="stylesheet" type="text/css"/>
+    <script src="https://www.kryogenix.org/code/browser/sorttable/sorttable.js"></script>
 </head>
 <body>
 <div>
-    Current Time: <%=Instant.now().toString()%>
+    <h2>Server Info</h2>
+    Current Time: <%=StringUtil.toIsoDate( Instant.now() )%>
+    <br/>
+    Up Time: <%=StringUtil.toIsoDuration(Duration.between(app.getStartupTime(), Instant.now()))%>
     <br/>
     <% if (app.getSettings().isFtpEnabled()) {%>
     <% Instant lastIngest = app.getStatus().getLastFtpIngest(); %>
@@ -52,17 +62,30 @@
     <br/>
     Servers Shown: <%= summaryBean.getServerCount() %>
     <br/>
+    <h3>Counters</h3>
+    <% final Map<String, String> counterStatMap = app.getStatisticCounterBundle().debugStats( request.getLocale() ); %>
+    <% for ( final Map.Entry<String, String> entry : counterStatMap.entrySet() ) { %>
+    <%= entry.getKey() %>: <%= entry.getValue()%><br/>
+    <% } %>
     <br/>
+    <h3>Events/Second</h3>
+    <% final Map<String, String> epsStatMap = app.getStatisticEpsBundle().debugStats( request.getLocale() ); %>
+    <% for ( final Map.Entry<String, String> entry : epsStatMap.entrySet() ) { %>
+    <%= entry.getKey() %>: <%= entry.getValue()%><br/>
+    <% } %>
+    <br/>
+    <h1>PWM Telemetry Data</h1>
 
+    <%--
     <form method="get">
         <label>Servers that have sent data in last number of days
             <input type="number" name="days" id="days" value="30" max="3650" min="1">
         </label>
         <button type="submit">Update</button>
     </form>
-
+    --%>
     <h2>Versions</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>Version</b></td>
             <td><b>Count</b></td>
@@ -75,7 +98,7 @@
         <% } %>
     </table>
     <h2>LDAP Vendors</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>Ldap</b></td>
             <td><b>Count</b></td>
@@ -88,7 +111,7 @@
         <% } %>
     </table>
     <h2>App Servers</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>App Server Info</b></td>
             <td><b>Count</b></td>
@@ -101,7 +124,7 @@
         <% } %>
     </table>
     <h2>OS Vendors</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>OS Vendor</b></td>
             <td><b>Count</b></td>
@@ -113,8 +136,21 @@
         </tr>
         <% } %>
     </table>
+    <h2>Deployment Type</h2>
+    <table class="sortable">
+        <tr>
+            <td><b>Deployment Type</b></td>
+            <td><b>Count</b></td>
+        </tr>
+        <% for (final String osName : summaryBean.getDeploymentCount().keySet()) { %>
+        <tr>
+            <td><%=osName%></td>
+            <td><%=summaryBean.getDeploymentCount().get(osName)%></td>
+        </tr>
+        <% } %>
+    </table>
     <h2>DB Vendors</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>DB Vendor</b></td>
             <td><b>Count</b></td>
@@ -127,7 +163,7 @@
         <% } %>
     </table>
     <h2>Java VMs</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>Java VM</b></td>
             <td><b>Count</b></td>
@@ -140,7 +176,7 @@
         <% } %>
     </table>
     <h2>Settings</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>Setting</b></td>
             <td><b>Count</b></td>
@@ -148,12 +184,12 @@
         <% for (final String setting: summaryBean.getSettingCount().keySet()) { %>
         <tr>
             <td><%=setting%></td>
-            <td><%=summaryBean.getSettingCount().get(setting)%></td>
+            <td><%=format.format(summaryBean.getSettingCount().get(setting).longValue())%></td>
         </tr>
         <% } %>
     </table>
     <h2>Statistics</h2>
-    <table border="1">
+    <table class="sortable">
         <tr>
             <td><b>Statistic</b></td>
             <td><b>Count</b></td>
@@ -161,13 +197,14 @@
         <% for (final String statistic: summaryBean.getStatCount().keySet()) { %>
         <tr>
             <td><%=statistic%></td>
-            <td><%=summaryBean.getStatCount().get(statistic)%></td>
+            <td><%=format.format(summaryBean.getStatCount().get(statistic).longValue())%></td>
         </tr>
         <% } %>
     </table>
     <br/>
+    <%--
     <h2>Summary Data</h2>
-    <table border="1">
+    <table>
         <tr>
             <td><b>SiteHash</b></td>
             <td><b>Description</b></td>
@@ -198,6 +235,7 @@
         </tr>
         <% } %>
     </table>
+    --%>
 </div>
 </body>
 </html>

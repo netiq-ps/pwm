@@ -23,6 +23,7 @@ package password.pwm.http.servlet.configmanager;
 import lombok.Builder;
 import lombok.Value;
 import password.pwm.PwmConstants;
+import password.pwm.bean.ProfileID;
 import password.pwm.config.DomainConfig;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.PwmSettingSyntax;
@@ -38,7 +39,7 @@ import password.pwm.http.PwmRequest;
 import password.pwm.http.PwmRequestAttribute;
 import password.pwm.http.servlet.AbstractPwmServlet;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.secure.X509Utils;
 import password.pwm.ws.server.RestResultBean;
@@ -47,7 +48,6 @@ import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import java.io.IOException;
 import java.io.Serializable;
-import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -90,7 +90,7 @@ public class ConfigManagerCertificatesServlet extends AbstractPwmServlet
     protected Optional<ConfigManagerCertificateAction> readProcessAction( final PwmRequest request )
             throws PwmUnrecoverableException
     {
-        return JavaHelper.readEnumFromString( ConfigManagerCertificateAction.class, request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
+        return EnumUtil.readEnumFromString( ConfigManagerCertificateAction.class, request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
     }
 
     @Override
@@ -104,7 +104,7 @@ public class ConfigManagerCertificatesServlet extends AbstractPwmServlet
 
         if ( action.isPresent() && action.get() == ConfigManagerCertificateAction.certificateData )
         {
-            final RestResultBean restResultBean = RestResultBean.withData( certificateDebugDataItems );
+            final RestResultBean restResultBean = RestResultBean.withData( certificateDebugDataItems, List.class );
             pwmRequest.outputJsonResult( restResultBean );
             return;
         }
@@ -128,7 +128,7 @@ public class ConfigManagerCertificatesServlet extends AbstractPwmServlet
             {
                 final StoredValue storedValue = storedConfiguration.readStoredValue( key ).orElseThrow();
                 final List<X509Certificate> certificates = ValueTypeConverter.valueToX509Certificates( pwmSetting, storedValue );
-                certificateDebugDataItems.addAll( makeItems( pwmSetting, key.getProfileID(), certificates ) );
+                certificateDebugDataItems.addAll( makeItems( pwmSetting, key.getProfileID().orElseThrow(), certificates ) );
             }
             else if ( pwmSetting.getSyntax() == PwmSettingSyntax.ACTION )
             {
@@ -139,7 +139,7 @@ public class ConfigManagerCertificatesServlet extends AbstractPwmServlet
                     for ( final ActionConfiguration.WebAction webAction : actionConfiguration.getWebActions() )
                     {
                         final List<X509Certificate> certificates = webAction.getCertificates();
-                        certificateDebugDataItems.addAll( makeItems( pwmSetting, key.getProfileID(), certificates ) );
+                        certificateDebugDataItems.addAll( makeItems( pwmSetting, key.getProfileID().orElseThrow(), certificates ) );
                     }
                 }
             }
@@ -151,7 +151,7 @@ public class ConfigManagerCertificatesServlet extends AbstractPwmServlet
 
     Collection<CertificateDebugDataItem> makeItems(
             final PwmSetting setting,
-            final String profileId,
+            final ProfileID profileId,
             final List<X509Certificate> certificates
     )
             throws PwmUnrecoverableException
@@ -161,7 +161,7 @@ public class ConfigManagerCertificatesServlet extends AbstractPwmServlet
             return Collections.emptyList();
         }
 
-        final List<CertificateDebugDataItem> certificateDebugDataItems = new ArrayList<>();
+        final List<CertificateDebugDataItem> certificateDebugDataItems = new ArrayList<>( certificates.size() );
         for ( final X509Certificate certificate : certificates )
         {
             final CertificateDebugDataItem certificateDebugDataItem = makeItem( setting, profileId, certificate );
@@ -172,26 +172,18 @@ public class ConfigManagerCertificatesServlet extends AbstractPwmServlet
 
     CertificateDebugDataItem makeItem(
             final PwmSetting setting,
-            final String profileId,
+            final ProfileID profileId,
             final X509Certificate certificate
     )
-            throws PwmUnrecoverableException
     {
         final CertificateDebugDataItem.CertificateDebugDataItemBuilder builder = CertificateDebugDataItem.builder();
         builder.menuLocation( setting.toMenuLocationDebug( profileId, PwmConstants.DEFAULT_LOCALE ) );
-        builder.subject( certificate.getSubjectDN().toString() );
+        builder.subject( certificate.getSubjectX500Principal().getName() );
         builder.serial( certificate.getSerialNumber().toString() );
         builder.algorithm( certificate.getSigAlgName() );
         builder.issueDate( certificate.getNotBefore().toInstant() );
         builder.expirationDate( certificate.getNotAfter().toInstant() );
-        try
-        {
-            builder.detail( X509Utils.makeDetailText( certificate ) );
-        }
-        catch ( final CertificateEncodingException e )
-        {
-            LOGGER.error( () -> "unexpected error parsing certificate detail text: " + e.getMessage() );
-        }
+        builder.detail( X509Utils.makeDetailText( certificate ) );
         return builder.build();
     }
 

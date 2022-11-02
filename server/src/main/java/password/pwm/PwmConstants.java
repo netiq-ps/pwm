@@ -74,7 +74,7 @@ public abstract class PwmConstants
     public static final Charset DEFAULT_CHARSET = StandardCharsets.UTF_8;
     public static final List<String> HIGHLIGHT_LOCALES = StringUtil.splitAndTrim( readPwmConstantsBundle( "locale.highlightList" ), "," );
 
-    public static final CSVFormat DEFAULT_CSV_FORMAT = CSVFormat.DEFAULT;
+    public static final CSVFormat DEFAULT_CSV_FORMAT = CSVFormat.Builder.create( CSVFormat.DEFAULT ).setCommentMarker( '#' ).build();
 
     public static final String DEFAULT_DATETIME_FORMAT_STR = readPwmConstantsBundle( "locale.defaultDateTimeFormat" );
     public static final TimeZone DEFAULT_TIMEZONE = TimeZone.getTimeZone( readPwmConstantsBundle( "locale.defaultTimeZone" ) );
@@ -88,9 +88,10 @@ public abstract class PwmConstants
 
     public static final int XML_OUTPUT_LINE_WRAP_LENGTH = 120;
 
+    public static final Package PWM_BASE_PACKAGE = ClassLoader.getSystemClassLoader()
+            .getDefinedPackage( "password.pwm" );
+
     public static final String LDAP_AD_PASSWORD_POLICY_CONTROL_ASN = "1.2.840.113556.1.4.2066";
-    public static final String PROFILE_ID_ALL = "all";
-    public static final String PROFILE_ID_DEFAULT = "default";
 
     public static final String TOKEN_KEY_PWD_CHG_DATE = "_lastPwdChange";
 
@@ -108,6 +109,8 @@ public abstract class PwmConstants
     public static final String REQUEST_ATTR_FORGOTTEN_PW_AVAIL_TOKEN_DEST_CACHE = "ForgottenPw-AvailableTokenDestCache";
     public static final String REQUEST_ATTR_DOMAIN = "domain";
     public static final String REQUEST_ATTR_PWM_APPLICATION = "PwmApplication";
+    public static final String REQUEST_ATTR_SRC_ADDRESS = "SourceAddress";
+    public static final String REQUEST_ATTR_SRC_HOSTNAME = "SourceAddress";
 
     public static final String LOG_REMOVED_VALUE_REPLACEMENT = readPwmConstantsBundle( "log.removedValue" );
 

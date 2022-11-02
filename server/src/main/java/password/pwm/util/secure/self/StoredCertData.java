@@ -20,7 +20,6 @@
 
 package password.pwm.util.secure.self;
 
-import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.java.StringUtil;
 
 import java.io.ByteArrayInputStream;
@@ -35,10 +34,10 @@ import java.security.cert.X509Certificate;
 public class StoredCertData implements Serializable
 {
     private final X509Certificate x509Certificate;
-    private String keypairb64;
+    private final String keypairb64;
 
     public StoredCertData( final X509Certificate x509Certificate, final KeyPair keypair )
-        throws IOException, PwmUnrecoverableException
+        throws IOException
     {
         this.x509Certificate = x509Certificate;
         final ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -60,5 +59,7 @@ public class StoredCertData implements Serializable
         final ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream( ba );
         final ObjectInputStream ois = new ObjectInputStream( byteArrayInputStream );
         return ( KeyPair ) ois.readObject();
+
+
     }
 }

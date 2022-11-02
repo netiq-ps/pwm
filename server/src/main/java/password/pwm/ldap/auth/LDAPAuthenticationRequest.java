@@ -59,12 +59,13 @@ import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.svc.stats.StatisticsService;
 import password.pwm.util.PasswordData;
 import password.pwm.util.java.AtomicLoopIntIncrementer;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogLevel;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
 import password.pwm.util.password.PasswordUtility;
+import password.pwm.util.password.RandomGeneratorConfig;
 import password.pwm.util.password.RandomPasswordGenerator;
 
 import java.time.Instant;
@@ -501,10 +502,7 @@ class LDAPAuthenticationRequest implements AuthenticationRequest
                     chaiUser );
 
             // create random password for user
-            final RandomPasswordGenerator.RandomGeneratorConfig randomGeneratorConfig = RandomPasswordGenerator.RandomGeneratorConfig.builder()
-                    .seedlistPhrases( RandomPasswordGenerator.DEFAULT_SEED_PHRASES )
-                    .passwordPolicy( passwordPolicy )
-                    .build();
+            final RandomGeneratorConfig randomGeneratorConfig = RandomGeneratorConfig.make( pwmDomain, passwordPolicy );
 
             final PasswordData currentPass = RandomPasswordGenerator.createRandomPassword( sessionLabel, randomGeneratorConfig, pwmDomain );
 
@@ -570,7 +568,7 @@ class LDAPAuthenticationRequest implements AuthenticationRequest
             {
                 if ( Instant.now().isBefore( date ) )
                 {
-                    final String errorMsg = "change not permitted until " + JavaHelper.toIsoDate(
+                    final String errorMsg = "change not permitted until " + StringUtil.toIsoDate(
                             date );
                     throw new PwmUnrecoverableException(
                             new ErrorInformation( PwmError.PASSWORD_TOO_SOON, errorMsg ) );

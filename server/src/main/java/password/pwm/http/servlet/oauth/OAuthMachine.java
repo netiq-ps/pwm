@@ -23,6 +23,7 @@ package password.pwm.http.servlet.oauth;
 import org.apache.http.HttpStatus;
 import password.pwm.AppProperty;
 import password.pwm.bean.LoginInfoBean;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.SessionLabel;
 import password.pwm.bean.UserIdentity;
 import password.pwm.config.DomainConfig;
@@ -44,7 +45,7 @@ import password.pwm.http.servlet.PwmServletDefinition;
 import password.pwm.util.BasicAuthInfo;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
@@ -86,12 +87,12 @@ public class OAuthMachine
         final String requestStateStr = pwmRequest.readParameterAsString( pwmRequest.getDomainConfig().readAppProperty( AppProperty.HTTP_PARAM_OAUTH_STATE ) );
         if ( requestStateStr != null )
         {
-            final String stateJson = pwmRequest.getPwmDomain().getSecureService().decryptStringValue( requestStateStr );
-            final OAuthState oAuthState = JsonUtil.deserialize( stateJson, OAuthState.class );
+            final OAuthState oAuthState = pwmRequest.decryptObject( requestStateStr, OAuthState.class );
             if ( oAuthState != null )
             {
                 final boolean sessionMatch = oAuthState.getSessionID().equals( pwmRequest.getPwmSession().getSessionStateBean().getSessionVerificationKey() );
-                LOGGER.trace( pwmRequest, () -> "read state while parsing oauth consumer request with match=" + sessionMatch + ", " + JsonUtil.serialize( oAuthState ) );
+                LOGGER.trace( pwmRequest, () -> "read state while parsing oauth consumer request with match=" + sessionMatch + ", "
+                        + JsonFactory.get().serialize( oAuthState ) );
                 return Optional.of( new OAuthRequestState( oAuthState, sessionMatch ) );
             }
         }
@@ -104,7 +105,7 @@ public class OAuthMachine
             final PwmRequest pwmRequest,
             final String nextUrl,
             final UserIdentity userIdentity,
-            final String forgottenPasswordProfile
+            final ProfileID forgottenPasswordProfile
     )
             throws PwmUnrecoverableException, IOException
     {
@@ -288,8 +289,8 @@ public class OAuthMachine
                     .certificates( CollectionUtil.isEmpty( certs ) ? null : certs )
                     .maskBodyDebugOutput( true )
                     .build();
-            final PwmHttpClient pwmHttpClient = pwmRequest.getPwmDomain().getHttpClientService().getPwmHttpClient( config );
-            pwmHttpClientResponse = pwmHttpClient.makeRequest( pwmHttpClientRequest, pwmRequest.getLabel() );
+            final PwmHttpClient pwmHttpClient = pwmRequest.getClientConnectionHolder().getPwmHttpClient( config );
+            pwmHttpClientResponse = pwmHttpClient.makeRequest( pwmHttpClientRequest );
         }
         catch ( final PwmException e )
         {
@@ -382,7 +383,7 @@ public class OAuthMachine
                 if ( resolveResults.getExpiresSeconds() > 0 )
                 {
                     final Instant accessTokenExpirationDate = Instant.ofEpochMilli( System.currentTimeMillis() + 1000 * resolveResults.getExpiresSeconds() );
-                    LOGGER.trace( sessionLabel, () -> "noted oauth access token expiration at timestamp " + JavaHelper.toIsoDate( accessTokenExpirationDate ) );
+                    LOGGER.trace( sessionLabel, () -> "noted oauth access token expiration at timestamp " + StringUtil.toIsoDate( accessTokenExpirationDate ) );
                     loginInfoBean.setOauthExp( accessTokenExpirationDate );
                     loginInfoBean.setOauthRefToken( resolveResults.getRefreshToken() );
                     return false;
@@ -394,7 +395,7 @@ public class OAuthMachine
             LOGGER.error( sessionLabel, () -> "error while processing oauth token refresh: " + e.getMessage() );
         }
         LOGGER.error( sessionLabel, () -> "unable to refresh oauth token for user, unauthenticated session" );
-        pwmRequest.getPwmSession().unauthenticateUser( pwmRequest );
+        pwmRequest.getPwmSession().unAuthenticateUser( pwmRequest );
         return true;
     }
 
@@ -402,7 +403,7 @@ public class OAuthMachine
     private String makeStateStringForRequest(
             final PwmRequest pwmRequest,
             final String nextUrl,
-            final String forgottenPasswordProfileID
+            final ProfileID forgottenPasswordProfileID
     )
             throws PwmUnrecoverableException
     {
@@ -429,8 +430,7 @@ public class OAuthMachine
                 + oAuthState.getStateID() + " with the next destination URL set to " + oAuthState.getNextUrl() );
 
 
-        final String jsonValue = JsonUtil.serialize( oAuthState );
-        return pwmRequest.getPwmDomain().getSecureService().encryptToString( jsonValue );
+        return pwmRequest.encryptObjectToString( oAuthState );
     }
 
     private Optional<String> figureUsernameGrantParam(
@@ -466,14 +466,14 @@ public class OAuthMachine
             listWrapper.add( dataPayload );
 
             requestPayload = new HashMap<>();
-            requestPayload.put( "data", JsonUtil.serializeCollection( listWrapper ) );
+            requestPayload.put( "data", JsonFactory.get().serializeCollection( listWrapper ) );
         }
 
         LOGGER.debug( sessionLabel, () -> "preparing to send username to OAuth /sign endpoint for future injection to /grant redirect" );
         final PwmHttpClientResponse restResults = makeHttpRequest( pwmRequest, "OAuth pre-inject username signing service", settings, signUrl, requestPayload, null );
 
         final String resultBody = restResults.getBody();
-        final Map<String, String> resultBodyMap = JsonUtil.deserializeStringMap( resultBody );
+        final Map<String, String> resultBodyMap = JsonFactory.get().deserializeStringMap( resultBody );
         final String data = resultBodyMap.get( "data" );
         if ( StringUtil.isEmpty( data ) )
         {
@@ -490,7 +490,7 @@ public class OAuthMachine
     {
         try
         {
-            final Map<String, Object> bodyMap = JsonUtil.deserializeMap( bodyString );
+            final Map<String, Object> bodyMap = JsonFactory.get().deserializeMap( bodyString, String.class, Object.class );
             final List<String> attributeValues = StringUtil.splitAndTrim( attributeNames, "," );
 
             for ( final String attribute : attributeValues )

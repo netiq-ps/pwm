@@ -21,30 +21,26 @@
 package password.pwm.util.java;
 
 import lombok.Value;
-import password.pwm.error.PwmError;
-import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.logging.PwmLogger;
+import password.pwm.util.secure.PwmHashAlgorithm;
+import password.pwm.util.secure.SecureEngine;
 
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.Serializable;
-import java.nio.Buffer;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Stream;
-import java.util.zip.CRC32;
 
 public class FileSystemUtility
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( FileSystemUtility.class );
-
-    private static final int CRC_BUFFER_SIZE = 60 * 1024;
 
     public static Iterator<FileSummaryInformation> readFileInformation( final List<File> rootFiles )
     {
@@ -147,14 +143,14 @@ public class FileSystemUtility
         private final String filepath;
         private final Instant modified;
         private final long size;
-        private final long checksum;
+        private final String sha512Hash;
 
         public static FileSummaryInformation fromFile( final File file )
         {
-            final long crc32;
+            final String sha512Hash;
             try
             {
-                crc32 = crc32( file );
+                sha512Hash = SecureEngine.hash( new FileInputStream( file ), PwmHashAlgorithm.SHA512 );
             }
             catch ( final IOException exception )
             {
@@ -166,85 +162,33 @@ public class FileSystemUtility
                     file.getParentFile().getAbsolutePath(),
                     Instant.ofEpochMilli( file.lastModified() ),
                     file.length(),
-                    crc32
+                    sha512Hash
             );
         }
     }
 
-    public static void deleteDirectoryContents( final File path ) throws IOException
-    {
-        deleteDirectoryContents( path, false );
-    }
-
-    private static void deleteDirectoryContents( final File path, final boolean deleteThisLevel )
+    public static void deleteDirectoryContentsRecursively( final Path path )
             throws IOException
     {
-        if ( !path.exists() )
-        {
-            throw new FileNotFoundException( path.getAbsolutePath() );
-        }
+        Objects.requireNonNull( path );
 
-        if ( path.isDirectory() )
-        {
-            final File[] files = path.listFiles();
-            if ( files != null )
-            {
-                for ( final File f : files )
-                {
-                    deleteDirectoryContents( f, true );
-                }
-            }
-        }
+        final Iterator<Path> pathIterator = Files.walk( path )
+                .filter( other -> !path.equals( other ) )
+                .sorted( Comparator.reverseOrder() )
+                .iterator();
 
-        if ( deleteThisLevel )
+        while ( pathIterator.hasNext() )
         {
-            LOGGER.debug( () -> "deleting temporary file " + path.getAbsolutePath() );
-            try
-            {
-                Files.delete( path.toPath() );
-            }
-            catch ( final IOException e )
-            {
-                LOGGER.warn( () -> "error deleting temporary file '" + path.getAbsolutePath() + "', error: " + e.getMessage() );
-            }
+            final Path nextPath = pathIterator.next();
+            Files.delete( nextPath );
         }
     }
 
-    private static long crc32( final File file )
+    public static File createDirectory( final Path basePath, final String newDirectoryName )
             throws IOException
     {
-        final CRC32 crc32 = new CRC32();
-        final FileChannel fileChannel = FileChannel.open( file.toPath() );
-        final int bufferSize = (int) Math.min( file.length(), CRC_BUFFER_SIZE );
-        final ByteBuffer byteBuffer = ByteBuffer.allocateDirect( bufferSize );
-
-        while ( fileChannel.read( byteBuffer ) > 0 )
-        {
-            // redundant cast to buffer to solve jdk8/9 inter-op issue
-            ( ( Buffer ) byteBuffer ).flip();
-
-            crc32.update( byteBuffer );
-
-            // redundant cast to buffer to solve jdk8/9 inter-op issue
-            ( ( Buffer ) byteBuffer ).clear();
-        }
-
-        return crc32.getValue();
-    }
-
-    public static void mkdirs( final File file )
-            throws PwmUnrecoverableException
-    {
-        if ( !file.exists() )
-        {
-            if ( !file.mkdirs() )
-            {
-                throw PwmUnrecoverableException.newException( PwmError.ERROR_INTERNAL, "unable to create directory: " + file.getAbsolutePath() );
-            }
-        }
-        else if ( !file.isDirectory() )
-        {
-            throw PwmUnrecoverableException.newException( PwmError.ERROR_INTERNAL, "unable to create directory, file already exists: " + file.getAbsolutePath() );
-        }
+        final Path path = Path.of( basePath.toString() + File.separator + newDirectoryName );
+        final Path newPath = Files.createDirectories( path );
+        return newPath.toFile();
     }
 }

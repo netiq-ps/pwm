@@ -26,8 +26,6 @@ import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmException;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.util.PwmScheduler;
-import password.pwm.util.java.JavaHelper;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 
@@ -37,14 +35,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 
 class NodeMachine
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( NodeMachine.class );
 
     private final PwmApplication pwmApplication;
-    private final ExecutorService executorService;
     private final NodeDataServiceProvider clusterDataServiceProvider;
 
     private ErrorInformation lastError;
@@ -63,15 +59,10 @@ class NodeMachine
         this.pwmApplication = pwmApplication;
         this.clusterDataServiceProvider = clusterDataServiceProvider;
         this.settings = nodeServiceSettings;
-
-        this.executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, NodeMachine.class );
-
-        pwmApplication.getPwmScheduler().scheduleFixedRateJob( new HeartbeatProcess(), executorService, settings.getHeartbeatInterval(), settings.getHeartbeatInterval() );
     }
 
     public void close( )
     {
-        JavaHelper.closeAndWaitExecutor( executorService, TimeDuration.SECOND );
     }
 
 
@@ -158,17 +149,32 @@ class NodeMachine
         return lastError;
     }
 
+    protected HeartbeatProcess getHeartbeatProcess()
+    {
+        return new HeartbeatProcess();
+    }
+
     private class HeartbeatProcess implements Runnable
     {
         @Override
         public void run( )
         {
-            writeNodeStatus();
-            readNodeStatuses();
-            purgeOutdatedNodes();
+            try
+            {
+                writeNodeStatus();
+                readNodeStatuses();
+                purgeOutdatedNodes();
+                lastError = null;
+            }
+            catch ( final PwmUnrecoverableException e )
+            {
+                lastError = e.getErrorInformation();
+                LOGGER.error( e.getErrorInformation() );
+            }
         }
 
         void writeNodeStatus( )
+                throws PwmUnrecoverableException
         {
             try
             {
@@ -180,12 +186,12 @@ class NodeMachine
             {
                 final String errorMsg = "error writing node service heartbeat: " + e.getMessage();
                 final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_NODE_SERVICE_ERROR, errorMsg );
-                lastError = errorInformation;
-                LOGGER.error( lastError );
+                throw new PwmUnrecoverableException( errorInformation );
             }
         }
 
         void readNodeStatuses( )
+                throws PwmUnrecoverableException
         {
             try
             {
@@ -197,12 +203,12 @@ class NodeMachine
             {
                 final String errorMsg = "error reading node statuses: " + e.getMessage();
                 final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_NODE_SERVICE_ERROR, errorMsg );
-                lastError = errorInformation;
-                LOGGER.error( lastError );
+                throw new PwmUnrecoverableException( errorInformation );
             }
         }
 
         void purgeOutdatedNodes( )
+                throws PwmUnrecoverableException
         {
             try
             {
@@ -213,8 +219,7 @@ class NodeMachine
             {
                 final String errorMsg = "error purging outdated node reference: " + e.getMessage();
                 final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_NODE_SERVICE_ERROR, errorMsg );
-                lastError = errorInformation;
-                LOGGER.error( lastError );
+                throw new PwmUnrecoverableException( errorInformation );
             }
         }
     }

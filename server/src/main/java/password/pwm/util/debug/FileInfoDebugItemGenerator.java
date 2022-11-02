@@ -23,11 +23,12 @@ package password.pwm.util.debug;
 import org.apache.commons.csv.CSVPrinter;
 import password.pwm.PwmApplication;
 import password.pwm.util.java.FileSystemUtility;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -45,7 +46,8 @@ class FileInfoDebugItemGenerator implements AppItemGenerator
     }
 
     @Override
-    public void outputItem( final AppDebugItemInput debugItemInput, final OutputStream outputStream ) throws Exception
+    public void outputItem( final AppDebugItemInput debugItemInput, final OutputStream outputStream )
+            throws IOException
     {
         final PwmApplication pwmApplication = debugItemInput.getPwmApplication();
         final File applicationPath = pwmApplication.getPwmEnvironment().getApplicationPath();
@@ -84,14 +86,14 @@ class FileInfoDebugItemGenerator implements AppItemGenerator
             }
         }
 
-        final CSVPrinter csvPrinter = JavaHelper.makeCsvPrinter( outputStream );
+        final CSVPrinter csvPrinter = PwmUtil.makeCsvPrinter( outputStream );
         {
             final List<String> headerRow = new ArrayList<>();
             headerRow.add( "Filepath" );
             headerRow.add( "Filename" );
             headerRow.add( "Last Modified" );
             headerRow.add( "Size" );
-            headerRow.add( "Checksum" );
+            headerRow.add( "Sha512Hash" );
             csvPrinter.printComment( StringUtil.join( headerRow, "," ) );
         }
 
@@ -104,9 +106,9 @@ class FileInfoDebugItemGenerator implements AppItemGenerator
                 final List<String> dataRow = new ArrayList<>();
                 dataRow.add( fileSummaryInformation.getFilepath() );
                 dataRow.add( fileSummaryInformation.getFilename() );
-                dataRow.add( JavaHelper.toIsoDate( fileSummaryInformation.getModified() ) );
+                dataRow.add( StringUtil.toIsoDate( fileSummaryInformation.getModified() ) );
                 dataRow.add( String.valueOf( fileSummaryInformation.getSize() ) );
-                dataRow.add( Long.toString( fileSummaryInformation.getChecksum() ) );
+                dataRow.add( fileSummaryInformation.getSha512Hash() );
                 csvPrinter.printRecord( dataRow );
             }
             catch ( final Exception e )

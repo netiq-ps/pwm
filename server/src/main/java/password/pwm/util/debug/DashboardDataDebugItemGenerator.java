@@ -22,10 +22,13 @@ package password.pwm.util.debug;
 
 import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
+import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.ContextManager;
 import password.pwm.http.servlet.admin.AppDashboardData;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
+import password.pwm.util.json.JsonProvider;
 
+import java.io.IOException;
 import java.io.OutputStream;
 
 class DashboardDataDebugItemGenerator implements DomainItemGenerator
@@ -37,7 +40,8 @@ class DashboardDataDebugItemGenerator implements DomainItemGenerator
     }
 
     @Override
-    public void outputItem( final DomainDebugItemInput debugItemInput, final OutputStream outputStream ) throws Exception
+    public void outputItem( final DomainDebugItemInput debugItemInput, final OutputStream outputStream )
+            throws IOException, PwmUnrecoverableException
     {
         final PwmDomain pwmDomain = debugItemInput.getPwmDomain();
         final ContextManager contextManager = pwmDomain.getPwmApplication().getPwmEnvironment().getContextManager();
@@ -47,6 +51,6 @@ class DashboardDataDebugItemGenerator implements DomainItemGenerator
                 debugItemInput.getLocale()
         );
 
-        outputStream.write( JsonUtil.serialize( appDashboardData, JsonUtil.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
+        outputStream.write( JsonFactory.get().serialize( appDashboardData, JsonProvider.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
     }
 }

@@ -32,13 +32,13 @@ import password.pwm.error.PwmException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.health.HealthMessage;
 import password.pwm.health.HealthRecord;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
 import password.pwm.svc.event.UserAuditRecord;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.localdb.LocalDB;
@@ -137,7 +137,7 @@ public class UserHistoryService extends AbstractPwmService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         setStatus( STATUS.CLOSED );
     }
@@ -169,7 +169,7 @@ public class UserHistoryService extends AbstractPwmService implements PwmService
     {
         final Instant startTime = Instant.now();
         final List<UserAuditRecord> results = userHistoryStore.readUserHistory( sessionLabel, userInfoBean );
-        LOGGER.trace( sessionLabel, () -> "read " + results.size() + " user history records", () -> TimeDuration.fromCurrent( startTime ) );
+        LOGGER.trace( sessionLabel, () -> "read " + results.size() + " user history records", TimeDuration.fromCurrent( startTime ) );
         return results;
     }
 
@@ -186,7 +186,8 @@ public class UserHistoryService extends AbstractPwmService implements PwmService
             }
             else
             {
-                LOGGER.trace( sessionLabel, () -> "skipping update of user history, audit record does not have a perpetratorDN: " + JsonUtil.serialize( auditRecord ) );
+                LOGGER.trace( sessionLabel, () -> "skipping update of user history, audit record does not have a perpetratorDN: "
+                        + JsonFactory.get().serialize( auditRecord ) );
             }
         }
 

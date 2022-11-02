@@ -22,10 +22,13 @@ package password.pwm.util.debug;
 
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
+import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.svc.PwmService;
 import password.pwm.svc.node.NodeService;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
+import password.pwm.util.json.JsonProvider;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -41,7 +44,8 @@ class ClusterInfoDebugGenerator implements AppItemGenerator
     }
 
     @Override
-    public void outputItem( final AppDebugItemInput debugItemInput, final OutputStream outputStream ) throws Exception
+    public void outputItem( final AppDebugItemInput debugItemInput, final OutputStream outputStream )
+            throws IOException, PwmUnrecoverableException
     {
         final PwmApplication pwmApplication = debugItemInput.getPwmApplication();
         final NodeService nodeService = pwmApplication.getNodeService();
@@ -55,6 +59,6 @@ class ClusterInfoDebugGenerator implements AppItemGenerator
             debugOutput.put( "nodes", new ArrayList<>( nodeService.nodes() ) );
         }
 
-        outputStream.write( JsonUtil.serializeMap( debugOutput, JsonUtil.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
+        outputStream.write( JsonFactory.get().serializeMap( debugOutput, JsonProvider.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
     }
 }

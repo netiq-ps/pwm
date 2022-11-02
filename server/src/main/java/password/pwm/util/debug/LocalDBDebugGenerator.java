@@ -22,9 +22,11 @@ package password.pwm.util.debug;
 
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
+import password.pwm.util.json.JsonProvider;
 import password.pwm.util.localdb.LocalDB;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.Map;
@@ -38,11 +40,12 @@ class LocalDBDebugGenerator implements AppItemGenerator
     }
 
     @Override
-    public void outputItem( final AppDebugItemInput debugItemInput, final OutputStream outputStream ) throws Exception
+    public void outputItem( final AppDebugItemInput debugItemInput, final OutputStream outputStream )
+            throws IOException
     {
         final PwmApplication pwmApplication = debugItemInput.getPwmApplication();
         final LocalDB localDB = pwmApplication.getLocalDB();
         final Map<String, Serializable> serializableMap = localDB.debugInfo();
-        outputStream.write( JsonUtil.serializeMap( serializableMap, JsonUtil.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
+        outputStream.write( JsonFactory.get().serializeMap( serializableMap, JsonProvider.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
     }
 }

@@ -23,12 +23,11 @@ package password.pwm.svc.wordlist;
 import password.pwm.PwmApplication;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.util.java.JavaHelper;
 import password.pwm.util.java.LongIncrementer;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StringUtil;
 
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -57,37 +56,22 @@ public abstract class AbstractWordlistBucket implements WordlistBucket
     {
         switch ( type )
         {
-            case SEEDLIST:
-            {
-                final Map<String, String> returnSet = new TreeMap<>();
-                for ( final String word : words )
-                {
-                    if ( StringUtil.notEmpty( word ) )
-                    {
-                        final long nextLong = valueIncrementer.next();
-                        final String nextKey = seedlistLongToKey( nextLong );
-                        returnSet.put( nextKey, word );
-                    }
-                }
-                return Collections.unmodifiableMap( returnSet );
-            }
-
             case WORDLIST:
             {
-                final Map<String, String> returnSet = new TreeMap<>();
+                final Map<String, String> returnData = new TreeMap<>();
                 for ( final String word : words )
                 {
                     if ( StringUtil.notEmpty( word ) )
                     {
                         valueIncrementer.next();
-                        returnSet.put( word, "" );
+                        returnData.put( word, "" );
                     }
                 }
-                return returnSet;
+                return returnData;
             }
 
             default:
-                JavaHelper.unhandledSwitchStatement( type );
+                PwmUtil.unhandledSwitchStatement( type );
         }
 
         throw new IllegalStateException( "unreachable switch statement" );
@@ -136,11 +120,6 @@ public abstract class AbstractWordlistBucket implements WordlistBucket
     @Override
     public boolean containsWord( final String word ) throws PwmUnrecoverableException
     {
-        if ( type == WordlistType.SEEDLIST )
-        {
-            throw new IllegalStateException( "unable to containWord check SEEDLIST wordlist" );
-        }
-
         return containsKey( word );
     }
 

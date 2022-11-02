@@ -24,13 +24,16 @@ import password.pwm.PwmDomain;
 import password.pwm.config.PwmSetting;
 import password.pwm.i18n.Admin;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.TimeDuration;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -115,6 +118,8 @@ public enum Statistic
     OBSOLETE_URL_REQUESTS( "ObsoleteUrlRequests", null ),
     SYSLOG_MESSAGES_SENT( "SyslogMessagesSent", null ),;
 
+    private static final Set<Statistic> STATISTICS_SET = Collections.unmodifiableSet( EnumSet.allOf( Statistic.class ) );
+
     private final String key;
     private final StatDetail statDetail;
 
@@ -185,6 +190,11 @@ public enum Statistic
         boolean isActive( PwmDomain pwmDomain );
     }
 
+    static Set<Statistic> asSet()
+    {
+        return STATISTICS_SET;
+    }
+
     static class ConfigSettingDetail implements StatDetail
     {
         private final PwmSetting pwmSetting;
@@ -203,6 +213,6 @@ public enum Statistic
 
     public static Optional<Statistic> forKey( final String key )
     {
-        return JavaHelper.readEnumFromPredicate( Statistic.class,  loopValue -> loopValue.getKey().equals( key ) );
+        return EnumUtil.readEnumFromPredicate( Statistic.class, loopValue -> loopValue.getKey().equals( key ) );
     }
 }

@@ -29,7 +29,7 @@ import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.HttpHeader;
 import password.pwm.http.HttpMethod;
 import password.pwm.http.PwmRequest;
-import password.pwm.http.bean.ImmutableByteArray;
+import password.pwm.data.ImmutableByteArray;
 import password.pwm.http.servlet.PwmServlet;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
@@ -37,7 +37,6 @@ import password.pwm.util.java.JavaHelper;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 
-import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -78,12 +77,11 @@ public class ResourceFileServlet extends HttpServlet implements PwmServlet
 
     @Override
     protected void doGet( final HttpServletRequest req, final HttpServletResponse resp )
-            throws ServletException, IOException
+            throws IOException
     {
-        PwmRequest pwmRequest = null;
         try
         {
-            pwmRequest = PwmRequest.forRequest( req, resp );
+            final PwmRequest pwmRequest = PwmRequest.forRequest( req, resp );
             processAction( pwmRequest );
             return;
         }
@@ -157,11 +155,11 @@ public class ResourceFileServlet extends HttpServlet implements PwmServlet
                 debugText = makeDebugText( fromCache, acceptsGzip, true );
             }
 
-            pwmRequest.debugHttpRequestToLog( debugText, () -> TimeDuration.fromCurrent( pwmRequest.getRequestStartTime() ) );
+            pwmRequest.debugHttpRequestToLog( debugText, TimeDuration.fromCurrent( pwmRequest.getRequestStartTime() ) );
 
             StatisticsClient.incrementStat( pwmDomain, Statistic.HTTP_RESOURCE_REQUESTS );
             resourceService.getAverageStats().update( ResourceServletService.AverageStat.cacheHitRatio, fromCache ? 1 : 0 );
-            resourceService.getAverageStats().update( ResourceServletService.AverageStat.avgResponseTimeMS, TimeDuration.fromCurrent( startTime ) );
+            resourceService.getAverageStats().update( ResourceServletService.AverageStat.avgResponseTimeMS, TimeDuration.fromCurrent( startTime ).asDuration() );
             resourceService.getCountingStats().increment( ResourceServletService.CountingStat.requestsServed );
             resourceService.getCountingStats().increment( ResourceServletService.CountingStat.bytesServed, file.length() );
         }
@@ -208,7 +206,7 @@ public class ResourceFileServlet extends HttpServlet implements PwmServlet
                 return Optional.empty();
             }
 
-            return Optional.of( resolvedFile.get() );
+            return resolvedFile;
         }
         catch ( final PwmUnrecoverableException e )
         {
@@ -236,14 +234,14 @@ public class ResourceFileServlet extends HttpServlet implements PwmServlet
             {
                 debugText.append( ", gzip" );
             }
-            debugText.append( ")" );
+            debugText.append( ')' );
             return debugText.toString();
         }
 
         if ( fromCache || acceptsGzip )
         {
             final StringBuilder debugText = new StringBuilder();
-            debugText.append( "(" );
+            debugText.append( '(' );
             if ( fromCache )
             {
                 debugText.append( "cached" );
@@ -256,7 +254,7 @@ public class ResourceFileServlet extends HttpServlet implements PwmServlet
             {
                 debugText.append( "gzip" );
             }
-            debugText.append( ")" );
+            debugText.append( ')' );
             return debugText.toString();
         }
         else

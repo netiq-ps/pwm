@@ -36,7 +36,7 @@ import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.ldap.auth.AuthenticationResult;
 import password.pwm.ldap.auth.SimpleLdapAuthenticator;
 import password.pwm.ldap.permission.UserPermissionUtility;
-import password.pwm.ldap.search.UserSearchEngine;
+import password.pwm.ldap.search.UserSearchService;
 import password.pwm.util.BasicAuthInfo;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.logging.PwmLogger;
@@ -76,7 +76,7 @@ public class RestAuthenticationProcessor
             {
                 final String name = namedSecretName.get();
                 LOGGER.trace( sessionLabel, () -> "authenticating with named secret '" + name + "'" );
-                final Set<WebServiceUsage> usages = CollectionUtil.copiedEnumSet( CollectionUtil.readEnumSetFromStringCollection(
+                final Set<WebServiceUsage> usages = CollectionUtil.copyToEnumSet( CollectionUtil.readEnumSetFromStringCollection(
                         WebServiceUsage.class,
                         pwmDomain.getConfig().readSettingAsNamedPasswords( PwmSetting.WEBSERVICES_EXTERNAL_SECRET ).get( name ).getUsage()
                 ), WebServiceUsage.class );
@@ -121,7 +121,7 @@ public class RestAuthenticationProcessor
                         RestAuthenticationType.LDAP,
                         null,
                         userIdentity.get(),
-                        Collections.unmodifiableSet( CollectionUtil.copiedEnumSet( WebServiceUsage.forType( RestAuthenticationType.LDAP ), WebServiceUsage.class ) ),
+                        Collections.unmodifiableSet( CollectionUtil.copyToEnumSet( WebServiceUsage.forType( RestAuthenticationType.LDAP ), WebServiceUsage.class ) ),
                         thirdParty,
                         chaiProvider
                 );
@@ -129,7 +129,7 @@ public class RestAuthenticationProcessor
         }
 
         final Set<WebServiceUsage> publicUsages = WebServiceUsage.forType( RestAuthenticationType.PUBLIC );
-        final Set<WebServiceUsage> enabledUsages = CollectionUtil.copiedEnumSet(
+        final Set<WebServiceUsage> enabledUsages = CollectionUtil.copyToEnumSet(
                 pwmDomain.getConfig().readSettingAsOptionList( PwmSetting.WEBSERVICES_PUBLIC_ENABLE, WebServiceUsage.class ), WebServiceUsage.class );
         enabledUsages.retainAll( publicUsages );
 
@@ -200,10 +200,10 @@ public class RestAuthenticationProcessor
             return Optional.empty();
         }
 
-        final UserSearchEngine userSearchEngine = pwmDomain.getUserSearchEngine();
+        final UserSearchService userSearchService = pwmDomain.getUserSearchEngine();
         try
         {
-            return Optional.of( userSearchEngine.resolveUsername( basicAuthInfo.get().getUsername(), null, null, sessionLabel ) );
+            return Optional.of( userSearchService.resolveUsername( basicAuthInfo.get().getUsername(), null, null, sessionLabel ) );
         }
         catch ( final PwmOperationalException e )
         {

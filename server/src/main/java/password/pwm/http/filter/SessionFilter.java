@@ -58,6 +58,8 @@ import java.net.URI;
 import java.net.UnknownHostException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 
 /**
  * <p>This session filter (invoked by the container through the web.xml descriptor) wraps all calls to the
@@ -74,7 +76,6 @@ public class SessionFilter extends AbstractPwmFilter
 
     private static final List<CheckingFunction> CHECKING_FUNCTIONS = List.of(
             new SessionVerificationChecker(),
-            new LocaleParamChecker(),
             new ThemeParamChecker(),
             new SsoOverrideParamChecker(),
             new ForwardParamChecker(),
@@ -135,11 +136,25 @@ public class SessionFilter extends AbstractPwmFilter
         }
 
         final TimeDuration requestExecuteTime = TimeDuration.fromCurrent( startTime );
-        pwmRequest.debugHttpRequestToLog( "completed", () -> requestExecuteTime );
+        pwmRequest.debugHttpRequestToLog( "completed", requestExecuteTime );
         pwmRequest.getPwmDomain().getStatisticsManager().updateAverageValue( AvgStatistic.AVG_REQUEST_PROCESS_TIME, requestExecuteTime.asMillis() );
         pwmRequest.getPwmSession().getSessionStateBean().getRequestCount().incrementAndGet();
-        pwmRequest.getPwmSession().getSessionStateBean().getAvgRequestDuration().update( requestExecuteTime );
+        pwmRequest.getPwmSession().getSessionStateBean().getAvgRequestDuration().update( requestExecuteTime.asDuration() );
+        updateSessionLocale( pwmRequest );
     }
+
+    private static void updateSessionLocale( final PwmRequest pwmRequest )
+    {
+        final Locale locale = pwmRequest.getLocale();
+        final LocalSessionStateBean ssBean = pwmRequest.getPwmSession().getSessionStateBean();
+
+        if ( !Objects.equals( ssBean.getLocale(), locale ) )
+        {
+            LOGGER.debug( pwmRequest, () -> "setting session locale to '" + locale + "'" );
+            ssBean.setLocale( locale );
+        }
+    }
+
 
     private ProcessStatus handleStandardRequestOperations(
             final PwmRequest pwmRequest
@@ -328,21 +343,31 @@ public class SessionFilter extends AbstractPwmFilter
             {
                 for ( final String paramName : pwmRequest.parameterNames() )
                 {
-                    // check to make sure param is in query string
-                    if ( queryString.contains( StringUtil.urlDecode( paramName ) ) )
+                    try
                     {
-                        if ( !verificationParamName.equals( paramName ) )
+                        final String decodedParamName = StringUtil.urlDecode( paramName );
+
+                        // check to make sure param is in query string
+                        if ( queryString.contains( decodedParamName ) )
                         {
-                            // raw read of param value to avoid sanitization checks
-                            for ( final String value : req.getParameterValues( paramName ) )
+                            if ( !verificationParamName.equals( paramName ) )
                             {
-                                redirectURL = PwmURL.appendAndEncodeUrlParameters( redirectURL, paramName, value );
+                                // raw read of param value to avoid sanitization checks
+                                for ( final String value : req.getParameterValues( paramName ) )
+                                {
+                                    redirectURL = PwmURL.appendAndEncodeUrlParameters( redirectURL, paramName, value );
+                                }
                             }
                         }
+                        else
+                        {
+                            LOGGER.debug( pwmRequest, () -> "dropping non-query string (body?) parameter '" + paramName + "' during redirect validation)" );
+                        }
                     }
-                    else
+                    catch ( final IOException e )
                     {
-                        LOGGER.debug( () -> "dropping non-query string (body?) parameter '" + paramName + "' during redirect validation)" );
+                        LOGGER.trace( pwmRequest, () -> "error decoding cookie value '" + paramName
+                                + "', error: " + e.getMessage() );
                     }
                 }
             }
@@ -353,37 +378,6 @@ public class SessionFilter extends AbstractPwmFilter
             }
 
             return redirectURL;
-        }
-    }
-
-    //override session locale due to parameter
-    private static class LocaleParamChecker implements CheckingFunction
-    {
-        @Override
-        public ProcessStatus processCheck( final PwmRequest pwmRequest ) throws PwmUnrecoverableException
-        {
-            final DomainConfig config = pwmRequest.getDomainConfig();
-            final String localeParamName = config.readAppProperty( AppProperty.HTTP_PARAM_NAME_LOCALE );
-            final String localeCookieName = config.readAppProperty( AppProperty.HTTP_COOKIE_LOCALE_NAME );
-            final String requestedLocale = pwmRequest.readParameterAsString( localeParamName );
-            final int cookieAgeSeconds = ( int ) pwmRequest.getAppConfig().readSettingAsLong( PwmSetting.LOCALE_COOKIE_MAX_AGE );
-            if ( requestedLocale != null && requestedLocale.length() > 0 )
-            {
-                LOGGER.debug( pwmRequest, () -> "detected locale request parameter " + localeParamName + " with value " + requestedLocale );
-                if ( pwmRequest.getPwmSession().setLocale( pwmRequest, requestedLocale ) )
-                {
-                    if ( cookieAgeSeconds > 0 )
-                    {
-                        pwmRequest.getPwmResponse().writeCookie(
-                                localeCookieName,
-                                requestedLocale,
-                                cookieAgeSeconds,
-                                PwmCookiePath.Domain
-                        );
-                    }
-                }
-            }
-            return ProcessStatus.Continue;
         }
     }
 
@@ -541,16 +535,11 @@ public class SessionFilter extends AbstractPwmFilter
                 return ProcessStatus.Continue;
             }
 
-            LOGGER.warn( () -> "invalidating session due to dirty page leave time greater then configured timeout" );
+            LOGGER.warn( pwmRequest, () -> "invalidating session due to dirty page leave time greater then configured timeout" );
             pwmRequest.invalidateSession();
             pwmRequest.getPwmResponse().sendRedirect( pwmRequest.getHttpServletRequest().getRequestURI() );
             return ProcessStatus.Halt;
         }
-    }
-
-    @Override
-    public void destroy( )
-    {
     }
 
     private static void checkUrlAgainstWhitelist(

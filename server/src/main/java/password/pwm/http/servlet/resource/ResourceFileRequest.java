@@ -37,12 +37,11 @@ import password.pwm.util.logging.PwmLogger;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,11 +52,10 @@ import java.util.zip.ZipFile;
 class ResourceFileRequest
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( ResourceFileRequest.class );
-
     private static final Map<String, String> WEB_JAR_VERSION_MAP = Map.copyOf( new WebJarAssetLocator().getWebJars() );
 
     /** Contains a list of all resources (files) found inside the resources folder of all JARs in the WAR's classpath. **/
-    private static final Collection<String> WEB_JAR_ASSET_LIST = Collections.unmodifiableCollection( new ArrayList<>( new WebJarAssetLocator().listAssets() ) );
+    private static final Collection<String> WEB_JAR_ASSET_LIST = List.copyOf( new WebJarAssetLocator().listAssets() );
 
     private final DomainConfig domainConfig;
     private final HttpServletRequest httpServletRequest;
@@ -70,7 +68,7 @@ class ResourceFileRequest
             @NonNull final ResourceServletConfiguration resourceServletConfiguration,
             @NonNull final HttpServletRequest httpServletRequest
     )
-            throws PwmUnrecoverableException
+            throws PwmUnrecoverableException, IOException
     {
         this.domainConfig = domainConfig;
         this.resourceServletConfiguration = resourceServletConfiguration;
@@ -185,6 +183,7 @@ class ResourceFileRequest
             final DomainConfig domainConfig,
             final String inputResourcePathUri
     )
+            throws IOException
     {
         // URL-decode the file name (might contain spaces and on) and prepare file object.
         String effectiveUri = StringUtil.urlDecode( inputResourcePathUri );
@@ -192,7 +191,7 @@ class ResourceFileRequest
         // parse out the session key...
         if ( effectiveUri.contains( ";" ) )
         {
-            effectiveUri = effectiveUri.substring( 0, effectiveUri.indexOf( ";" ) );
+            effectiveUri = effectiveUri.substring( 0, effectiveUri.indexOf( ';' ) );
         }
 
         if ( domainConfig.getAppConfig().isMultiDomain() )
@@ -215,7 +214,17 @@ class ResourceFileRequest
     )
             throws PwmUnrecoverableException
     {
-        final String effectiveUri = deriveEffectiveURI( domainConfig, inputResourcePathUri );
+        final String effectiveUri;
+        try
+        {
+            effectiveUri = deriveEffectiveURI( domainConfig, inputResourcePathUri );
+        }
+        catch ( final IOException e )
+        {
+            final String errorMsg = "i/o error during resource request resolution: " + e.getMessage();
+            LOGGER.trace( () -> errorMsg );
+            throw new PwmUnrecoverableException( PwmError.ERROR_INTERNAL, errorMsg );
+        }
 
         if ( !effectiveUri.startsWith( ResourceFileServlet.RESOURCE_PATH ) )
         {
@@ -342,7 +351,7 @@ class ResourceFileRequest
                 final String webJarName;
                 final String webJarPath;
                 {
-                    final int slashIndex = remainingPath.indexOf( "/" );
+                    final int slashIndex = remainingPath.indexOf( '/' );
                     if ( slashIndex < 0 )
                     {
                         return Optional.empty();

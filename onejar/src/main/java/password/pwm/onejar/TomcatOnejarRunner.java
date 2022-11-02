@@ -117,7 +117,7 @@ public class TomcatOnejarRunner
         {
             tomcat.setConnector( makeConnector( onejarConfig, tlsProperties ) );
             tomcat.start();
-            out( "tomcat started", startTime );
+            out( "tomcat started, listening on port " + onejarConfig.getPort(), startTime );
         }
         catch ( final Exception e )
         {
@@ -197,7 +197,7 @@ public class TomcatOnejarRunner
                 // Class not from JAR
                 return "version missing, not running inside jar";
             }
-            final String manifestPath = classPath.substring( 0, classPath.lastIndexOf( "!" ) + 1 )
+            final String manifestPath = classPath.substring( 0, classPath.lastIndexOf( '!' ) + 1 )
                     + "/META-INF/MANIFEST.MF";
             final Manifest manifest = new Manifest( new URL( manifestPath ).openStream() );
             final Attributes attr = manifest.getMainAttributes();
@@ -227,7 +227,7 @@ public class TomcatOnejarRunner
 
         try ( URLClassLoader classLoader = warClassLoaderFromConfig( onejarConfig ) )
         {
-            final Class pwmMainClass = classLoader.loadClass( "password.pwm.util.OnejarHelper" );
+            final Class<?> pwmMainClass = classLoader.loadClass( "password.pwm.util.OnejarHelper" );
             final String keystoreFile = onejarConfig.getKeystoreFile().getAbsolutePath();
             final Method mainMethod = pwmMainClass.getMethod(
                     "onejarHelper",
@@ -244,7 +244,7 @@ public class TomcatOnejarRunner
                     onejarConfig.getKeystorePass(),
             };
 
-            final Object returnObjValue = mainMethod.invoke( null, arguments );
+            final Object returnObjValue = mainMethod.invoke( null, ( Object[] ) arguments );
             final Properties returnProps = ( Properties ) returnObjValue;
             out( "completed read of tlsProperties", startTime );
             return returnProps;
@@ -255,8 +255,9 @@ public class TomcatOnejarRunner
     {
         final String envVarPrefix = Resource.envVarPrefix.getValue();
         System.setProperty( envVarPrefix + "_APPLICATIONPATH", onejarConfig.getApplicationPath().getAbsolutePath() );
-        System.setProperty( envVarPrefix + "_APPLICATIONFLAGS", "ManageHttps" );
+        System.setProperty( envVarPrefix + "_APPLICATIONFLAGS", "[\"ManageHttps\",\"Onejar\"]" );
         System.setProperty( envVarPrefix + "_APPLICATIONPARAMFILE", onejarConfig.getPwmAppPropertiesFile().getAbsolutePath() );
+        System.setProperty( "ONEJAR_ENV", "TRUE" );
     }
 
     private void outputPwmAppProperties( final OnejarConfig onejarConfig ) throws IOException

@@ -20,17 +20,14 @@
 
 package password.pwm.util.cli;
 
-import org.apache.log4j.ConsoleAppender;
-import org.apache.log4j.EnhancedPatternLayout;
-import org.apache.log4j.Layout;
-import org.apache.log4j.Logger;
 import password.pwm.AppProperty;
 import password.pwm.PwmApplication;
 import password.pwm.PwmApplicationMode;
 import password.pwm.PwmConstants;
 import password.pwm.PwmEnvironment;
+import password.pwm.bean.SessionLabel;
 import password.pwm.config.AppConfig;
-import password.pwm.config.stored.ConfigurationReader;
+import password.pwm.config.stored.ConfigurationFileManager;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
@@ -64,11 +61,9 @@ import password.pwm.util.cli.commands.TokenInfoCommand;
 import password.pwm.util.cli.commands.UserReportCommand;
 import password.pwm.util.cli.commands.VersionCommand;
 import password.pwm.util.java.FileSystemUtility;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBFactory;
-import password.pwm.util.logging.PwmLogLevel;
-import password.pwm.util.logging.PwmLogManager;
 import password.pwm.util.logging.PwmLogger;
 
 import java.io.File;
@@ -78,7 +73,6 @@ import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -87,6 +81,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class MainClass
 {
@@ -96,47 +93,39 @@ public class MainClass
 
     private static MainOptions mainOptions;
 
-    public static final Map<String, CliCommand> COMMANDS;
+    public static final Map<String, CliCommand> COMMANDS = Map.copyOf(
+            new TreeMap<>( Stream.of(
+                    new LocalDBInfoCommand(),
+                    new ExportLogsCommand(),
+                    new UserReportCommand(),
+                    new ExportLocalDBCommand(),
+                    new ImportLocalDBCommand(),
+                    new ExportAuditCommand(),
+                    new ConfigUnlockCommand(),
+                    new ConfigLockCommand(),
+                    new ConfigSetPasswordCommand(),
+                    new ExportStatsCommand(),
+                    new ExportResponsesCommand(),
+                    new ClearResponsesCommand(),
+                    new ImportResponsesCommand(),
+                    new TokenInfoCommand(),
+                    new ConfigNewCommand(),
+                    new VersionCommand(),
+                    new LdapSchemaExtendCommand(),
+                    new ConfigDeleteCommand(),
+                    new ResponseStatsCommand(),
+                    new ImportHttpsKeyStoreCommand(),
+                    new ExportHttpsKeyStoreCommand(),
+                    new ExportHttpsTomcatConfigCommand(),
+                    new ShellCommand(),
+                    new ConfigResetHttpsCommand(),
+                    new HelpCommand(),
+                    new ImportPropertyConfigCommand(),
+                    new ResetInstanceIDCommand(),
+                    new ExportWordlistCommand() ).collect( Collectors.toMap(
+                    command -> command.getCliParameters().commandName,
+                    Function.identity() ) ) ) );
 
-    static
-    {
-        final List<CliCommand> commandList = new ArrayList<>();
-        commandList.add( new LocalDBInfoCommand() );
-        commandList.add( new ExportLogsCommand() );
-        commandList.add( new UserReportCommand() );
-        commandList.add( new ExportLocalDBCommand() );
-        commandList.add( new ImportLocalDBCommand() );
-        commandList.add( new ExportAuditCommand() );
-        commandList.add( new ConfigUnlockCommand() );
-        commandList.add( new ConfigLockCommand() );
-        commandList.add( new ConfigSetPasswordCommand() );
-        commandList.add( new ExportStatsCommand() );
-        commandList.add( new ExportResponsesCommand() );
-        commandList.add( new ClearResponsesCommand() );
-        commandList.add( new ImportResponsesCommand() );
-        commandList.add( new TokenInfoCommand() );
-        commandList.add( new ConfigNewCommand() );
-        commandList.add( new VersionCommand() );
-        commandList.add( new LdapSchemaExtendCommand() );
-        commandList.add( new ConfigDeleteCommand() );
-        commandList.add( new ResponseStatsCommand() );
-        commandList.add( new ImportHttpsKeyStoreCommand() );
-        commandList.add( new ExportHttpsKeyStoreCommand() );
-        commandList.add( new ExportHttpsTomcatConfigCommand() );
-        commandList.add( new ShellCommand() );
-        commandList.add( new ConfigResetHttpsCommand() );
-        commandList.add( new HelpCommand() );
-        commandList.add( new ImportPropertyConfigCommand() );
-        commandList.add( new ResetInstanceIDCommand() );
-        commandList.add( new ExportWordlistCommand() );
-
-        final Map<String, CliCommand> sortedMap = new TreeMap<>();
-        for ( final CliCommand command : commandList )
-        {
-            sortedMap.put( command.getCliParameters().commandName, command );
-        }
-        COMMANDS = Collections.unmodifiableMap( sortedMap );
-    }
 
     public static String helpTextFromCommands( final Collection<CliCommand> commands )
     {
@@ -148,20 +137,20 @@ public class MainClass
             {
                 for ( final CliParameters.Option option : command.getCliParameters().options )
                 {
-                    output.append( " " );
+                    output.append( ' ' );
                     if ( option.isOptional() )
                     {
-                        output.append( "<" ).append( option.getName() ).append( ">" );
+                        output.append( '<' ).append( option.getName() ).append( '>' );
                     }
                     else
                     {
-                        output.append( "[" ).append( option.getName() ).append( "]" );
+                        output.append( '[' ).append( option.getName() ).append( ']' );
                     }
                 }
             }
-            output.append( "\n" );
+            output.append( '\n' );
             output.append( "       " ).append( command.getCliParameters().description );
-            output.append( "\n" );
+            output.append( '\n' );
         }
         return output.toString();
     }
@@ -170,12 +159,12 @@ public class MainClass
     {
         final StringBuilder output = new StringBuilder();
         output.append( helpTextFromCommands( COMMANDS.values() ) );
-        output.append( "\n" );
+        output.append( '\n' );
         output.append( "options:\n" );
         output.append( " -force                force operations skipping any confirmation\n" );
         output.append( " -debugLevel=x         set the debug level where x is TRACE, DEBUG, INFO, ERROR, WARN or FATAL\n" );
         output.append( " -applicationPath=x    set the application path, default is current path\n" );
-        output.append( "\n" );
+        output.append( '\n' );
         output.append( "usage: \n" );
         output.append( " command[.bat/.sh] <options> CommandName <command options>" );
 
@@ -196,7 +185,7 @@ public class MainClass
 
         final File configurationFile = locateConfigurationFile( applicationPath );
 
-        final ConfigurationReader configReader = loadConfiguration( configurationFile );
+        final ConfigurationFileManager configReader = loadConfiguration( configurationFile );
         final AppConfig config = configReader.getConfiguration();
 
         final PwmApplication pwmApplication;
@@ -223,7 +212,7 @@ public class MainClass
 
         final Writer outputStream = new OutputStreamWriter( System.out, PwmConstants.DEFAULT_CHARSET );
         return CliEnvironment.builder()
-                .configurationReader( configReader )
+                .configurationFileManager( configReader )
                 .configurationFile( configurationFile )
                 .config( config )
                 .applicationPath( applicationPath )
@@ -274,8 +263,7 @@ public class MainClass
                                 {
                                     throw ( CliException ) e;
                                 }
-                                throw new CliException( "cannot access file for option '" + option.getName() + "', " + e.getMessage() );
-
+                                throw new CliException( "cannot access file for option '" + option.getName() + "', " + e.getMessage(), e );
                             }
                             break;
 
@@ -295,7 +283,7 @@ public class MainClass
                                 {
                                     throw ( CliException ) e;
                                 }
-                                throw new CliException( "cannot access file for option '" + option.getName() + "', " + e.getMessage() );
+                                throw new CliException( "cannot access file for option '" + option.getName() + "', " + e.getMessage(), e );
                             }
                             break;
 
@@ -304,7 +292,7 @@ public class MainClass
                             break;
 
                         default:
-                            JavaHelper.unhandledSwitchStatement( option.getType() );
+                            PwmUtil.unhandledSwitchStatement( option.getType() );
                     }
                 }
             }
@@ -324,8 +312,6 @@ public class MainClass
         out( PwmConstants.PWM_APP_NAME + " " + PwmConstants.SERVLET_VERSION + " Command Line Utility" );
         mainOptions = MainOptions.parseMainCommandLineOptions( args, new OutputStreamWriter( System.out, PwmConstants.DEFAULT_CHARSET ) );
         final List<String> workingArgs = mainOptions.getRemainingArguments();
-
-        initLog4j( mainOptions.getPwmLogLevel() );
 
         final String commandStr = workingArgs == null || workingArgs.size() < 1 ? null : workingArgs.iterator().next();
 
@@ -348,7 +334,7 @@ public class MainClass
             }
             if ( !commandExceuted )
             {
-                out( "unknown command '" + workingArgs.iterator().next() + "'" );
+                out( "unknown command '" + workingArgs.get( 0 ) + "'" );
                 out( "use 'help' for command list" );
             }
         }
@@ -372,7 +358,7 @@ public class MainClass
         {
             final String errorMsg = "unable to establish operating environment: " + e.getMessage();
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_ENVIRONMENT_ERROR, errorMsg );
-            LOGGER.error( () -> errorInformation.toDebugStr(), e );
+            LOGGER.error( SessionLabel.CLI_SESSION_LABEL, errorInformation::toDebugStr, e );
             out( "unable to establish operating environment: " + e.getMessage() );
             System.exit( -1 );
             return;
@@ -398,7 +384,6 @@ public class MainClass
             catch ( final Exception e )
             {
                 out( "error closing operating environment: " + e.getMessage() );
-                e.printStackTrace();
             }
         }
         if ( cliEnvironment.getLocalDB() != null )
@@ -414,28 +399,6 @@ public class MainClass
         }
     }
 
-    private static void initLog4j( final PwmLogLevel logLevel )
-    {
-        if ( logLevel == null )
-        {
-            PwmLogger.disableAllLogging();
-            return;
-        }
-
-        final Layout patternLayout = new EnhancedPatternLayout( LOGGING_PATTERN );
-        final ConsoleAppender consoleAppender = new ConsoleAppender( patternLayout );
-        for ( final String logPackage : PwmLogManager.LOGGING_PACKAGES )
-        {
-            if ( logPackage != null )
-            {
-                final Logger logger = Logger.getLogger( logPackage );
-                logger.addAppender( consoleAppender );
-                logger.setLevel( logLevel.getLog4jLevel() );
-            }
-        }
-        PwmLogger.markInitialized();
-    }
-
     private static LocalDB loadPwmDB(
             final AppConfig config,
             final boolean readonly,
@@ -449,9 +412,9 @@ public class MainClass
         return LocalDBFactory.getInstance( databaseDirectory, readonly, null, config );
     }
 
-    private static ConfigurationReader loadConfiguration( final File configurationFile ) throws Exception
+    private static ConfigurationFileManager loadConfiguration( final File configurationFile ) throws Exception
     {
-        final ConfigurationReader reader = new ConfigurationReader( configurationFile );
+        final ConfigurationFileManager reader = new ConfigurationFileManager( configurationFile, SessionLabel.CLI_SESSION_LABEL );
 
         if ( reader.getConfigMode() == PwmApplicationMode.ERROR )
         {

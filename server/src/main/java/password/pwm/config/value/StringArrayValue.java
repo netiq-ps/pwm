@@ -20,14 +20,15 @@
 
 package password.pwm.config.value;
 
+import org.jrivard.xmlchai.XmlChai;
+import org.jrivard.xmlchai.XmlElement;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.PwmSettingFlag;
 import password.pwm.config.stored.StoredConfigXmlConstants;
 import password.pwm.config.stored.XmlOutputProcessData;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.secure.PwmSecurityKey;
 
 import java.util.ArrayList;
@@ -44,11 +45,16 @@ public class StringArrayValue extends AbstractValue implements StoredValue
 {
     private final List<String> values;
 
-    public StringArrayValue( final List<String> values )
+    private StringArrayValue( final PwmSetting pwmSetting, final List<String> values )
     {
-        final List<String> copiedValues = new ArrayList<>( values == null ? Collections.emptyList() : values );
-        copiedValues.removeAll( Collections.singleton( null ) );
-        this.values = Collections.unmodifiableList( copiedValues );
+        final List<String> copiedValues = new ArrayList<>( CollectionUtil.stripNulls( values ) );
+
+        if ( pwmSetting != null && pwmSetting.getFlags().contains( PwmSettingFlag.Sorted ) )
+        {
+            Collections.sort( copiedValues );
+        }
+
+        this.values = List.copyOf( copiedValues );
     }
 
     public static StoredValueFactory factory( )
@@ -56,15 +62,15 @@ public class StringArrayValue extends AbstractValue implements StoredValue
         return new StoredValueFactory()
         {
             @Override
-            public StringArrayValue fromJson( final String input )
+            public StringArrayValue fromJson( final PwmSetting pwmSetting, final String input )
             {
                 if ( StringUtil.isEmpty( input ) )
                 {
-                    return new StringArrayValue( Collections.emptyList() );
+                    return new StringArrayValue( pwmSetting, Collections.emptyList() );
                 }
                 else
                 {
-                    return new StringArrayValue( JsonUtil.deserializeStringList( input ) );
+                    return new StringArrayValue( pwmSetting, JsonFactory.get().deserializeStringList( input ) );
                 }
             }
 
@@ -76,24 +82,24 @@ public class StringArrayValue extends AbstractValue implements StoredValue
                         .flatMap( Optional::stream )
                         .collect( Collectors.toList() );
 
-                if ( pwmSetting != null && pwmSetting.getFlags().contains( PwmSettingFlag.Sorted ) )
-                {
-                    Collections.sort( values );
-                }
-
-                return new StringArrayValue( values );
+                return new StringArrayValue( pwmSetting, values );
             }
         };
+    }
+
+    public static StringArrayValue create( final List<String> values )
+    {
+        return new StringArrayValue( null, values );
     }
 
     @Override
     public List<XmlElement> toXmlValues( final String valueElementName, final XmlOutputProcessData xmlOutputProcessData )
     {
-        final List<XmlElement> returnList = new ArrayList<>();
+        final List<XmlElement> returnList = new ArrayList<>( values.size() );
         for ( final String value : this.values )
         {
-            final XmlElement valueElement = XmlFactory.getFactory().newElement( valueElementName );
-            valueElement.addText( value );
+            final XmlElement valueElement = XmlChai.getFactory().newElement( valueElementName );
+            valueElement.setText( value );
             returnList.add( valueElement );
         }
         return returnList;
@@ -140,7 +146,7 @@ public class StringArrayValue extends AbstractValue implements StoredValue
                 sb.append( valueIterator.next() );
                 if ( valueIterator.hasNext() )
                 {
-                    sb.append( "\n" );
+                    sb.append( '\n' );
                 }
             }
             return sb.toString();

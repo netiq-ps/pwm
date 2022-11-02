@@ -20,15 +20,14 @@
 
 package password.pwm.util.macro;
 
-import com.google.gson.reflect.TypeToken;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
-import password.pwm.bean.SessionLabel;
 import password.pwm.bean.pub.PublicUserInfoBean;
 import password.pwm.error.PwmException;
-import password.pwm.ldap.UserInfo;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.user.UserInfo;
+import password.pwm.user.UserInfoBean;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.ws.client.rest.RestClientHelper;
 
@@ -79,26 +78,31 @@ class ExternalRestMacro extends AbstractMacro
 
             if ( userInfoBean != null )
             {
-                final MacroRequest macroRequest = MacroRequest.forUser( pwmApplication, PwmConstants.DEFAULT_LOCALE, SessionLabel.SYSTEM_LABEL, userInfoBean.getUserIdentity() );
-                final PublicUserInfoBean publicUserInfoBean = PublicUserInfoBean.fromUserInfoBean(
+                final MacroRequest macroRequest = MacroRequest.forUser(
+                        pwmApplication,
+                        macroRequestInfo.getUserLocale(),
+                        macroRequestInfo.getSessionLabel(),
+                        userInfoBean.getUserIdentity() );
+
+                final PublicUserInfoBean publicUserInfoBean = UserInfoBean.toPublicUserInfoBean(
                         userInfoBean,
                         pwmDomain.getConfig(),
                         PwmConstants.DEFAULT_LOCALE,
                         macroRequest
                 );
+
                 sendData.put( "userInfo", publicUserInfoBean );
             }
             sendData.put( "input", inputString );
 
-            final String requestBody = JsonUtil.serializeMap( sendData );
+            final String requestBody = JsonFactory.get().serializeMap( sendData );
             final String responseBody = RestClientHelper.makeOutboundRestWSCall( pwmDomain,
-                    PwmConstants.DEFAULT_LOCALE, url,
+                    macroRequestInfo.getSessionLabel(),
+                    PwmConstants.DEFAULT_LOCALE,
+                    url,
                     requestBody );
-            final Map<String, Object> responseMap = JsonUtil.deserialize( responseBody,
-                    new TypeToken<Map<String, Object>>()
-                    {
-                    }
-            );
+
+            final Map<String, Object> responseMap = JsonFactory.get().deserializeMap( responseBody, String.class, Object.class );
             if ( responseMap.containsKey( "output" ) )
             {
                 return responseMap.get( "output" ).toString();

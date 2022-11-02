@@ -30,7 +30,7 @@ import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
 import password.pwm.bean.UserIdentity;
 import password.pwm.config.stored.ConfigurationProperty;
-import password.pwm.config.stored.ConfigurationReader;
+import password.pwm.config.stored.ConfigurationFileManager;
 import password.pwm.config.stored.StoredConfiguration;
 import password.pwm.config.stored.StoredConfigurationUtil;
 import password.pwm.error.ErrorInformation;
@@ -49,7 +49,10 @@ import password.pwm.http.servlet.AbstractPwmServlet;
 import password.pwm.http.servlet.PwmServletDefinition;
 import password.pwm.svc.intruder.IntruderRecordType;
 import password.pwm.svc.intruder.IntruderServiceClient;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.java.PwmTimeUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
@@ -115,7 +118,7 @@ public class ConfigManagerLoginServlet extends AbstractPwmServlet
                     break;
 
                 default:
-                    JavaHelper.unhandledSwitchStatement( processAction.get() );
+                    PwmUtil.unhandledSwitchStatement( processAction.get() );
 
             }
             return;
@@ -136,7 +139,7 @@ public class ConfigManagerLoginServlet extends AbstractPwmServlet
             throws PwmUnrecoverableException, IOException, ServletException
     {
         final PwmDomain pwmDomain = pwmRequest.getPwmDomain();
-        final ConfigurationReader runningConfigReader = ContextManager.getContextManager( pwmRequest.getHttpServletRequest().getSession() ).getConfigReader();
+        final ConfigurationFileManager runningConfigReader = ContextManager.getContextManager( pwmRequest ).getConfigReader();
         final StoredConfiguration storedConfig = runningConfigReader.getStoredConfiguration();
 
         final String password = pwmRequest.readParameterAsString( "password" );
@@ -151,7 +154,7 @@ public class ConfigManagerLoginServlet extends AbstractPwmServlet
             else
             {
                 LOGGER.trace( pwmRequest, () -> "configuration password is not correct" );
-                IntruderServiceClient.markAddressAndSession( pwmDomain, pwmRequest.getPwmSession() );
+                IntruderServiceClient.markAddressAndSession( pwmRequest );
                 pwmDomain.getIntruderService().mark( IntruderRecordType.USERNAME, PwmConstants.CONFIGMANAGER_INTRUDER_USERNAME, pwmRequest.getLabel() );
                 final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_PASSWORD_ONLY_BAD );
                 updateLoginHistory( pwmRequest, pwmRequest.getUserInfoIfLoggedIn(), false );
@@ -166,7 +169,7 @@ public class ConfigManagerLoginServlet extends AbstractPwmServlet
     protected Optional<ConfigManagerLoginAction> readProcessAction( final PwmRequest request )
             throws PwmUnrecoverableException
     {
-        return JavaHelper.readEnumFromString( ConfigManagerLoginAction.class, request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
+        return EnumUtil.readEnumFromString( ConfigManagerLoginAction.class, request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
     }
 
 
@@ -174,7 +177,7 @@ public class ConfigManagerLoginServlet extends AbstractPwmServlet
             throws ServletException, PwmUnrecoverableException, IOException
     {
         final int persistentSeconds = figureMaxLoginSeconds( pwmRequest );
-        final String time = TimeDuration.of( persistentSeconds, TimeDuration.Unit.SECONDS ).asLongString( pwmRequest.getLocale() );
+        final String time = PwmTimeUtil.asLongString( TimeDuration.of( persistentSeconds, TimeDuration.Unit.SECONDS ), pwmRequest.getLocale() );
 
         final ConfigLoginHistory configLoginHistory = readConfigLoginHistory( pwmRequest );
         final boolean persistentLoginEnabled = persistentLoginEnabled( pwmRequest );
@@ -194,12 +197,17 @@ public class ConfigManagerLoginServlet extends AbstractPwmServlet
 
     private static void updateLoginHistory( final PwmRequest pwmRequest, final UserIdentity userIdentity, final boolean successful )
     {
+        if ( userIdentity == null )
+        {
+            return;
+        }
+
         final ConfigLoginHistory configLoginHistory = readConfigLoginHistory( pwmRequest );
         final ConfigLoginEvent event = new ConfigLoginEvent(
-                userIdentity == null ? "n/a" : userIdentity.toDisplayString(),
+                userIdentity.toDisplayString(),
                 Instant.now(),
-                pwmRequest.getPwmSession().getSessionStateBean().getSrcAddress()
-        );
+                pwmRequest.getPwmSession().getSessionStateBean().getSrcAddress() );
+
         final int maxEvents = Integer.parseInt( pwmRequest.getPwmDomain().getConfig().readAppProperty( AppProperty.CONFIG_HISTORY_MAX_ITEMS ) );
         configLoginHistory.addEvent( event, maxEvents, successful );
         pwmRequest.getPwmApplication().writeAppAttribute( AppAttribute.CONFIG_LOGIN_HISTORY, configLoginHistory );
@@ -319,7 +327,7 @@ public class ConfigManagerLoginServlet extends AbstractPwmServlet
             return;
         }
 
-        final ConfigurationReader runningConfigReader = ContextManager.getContextManager( pwmRequest.getHttpServletRequest().getSession() ).getConfigReader();
+        final ConfigurationFileManager runningConfigReader = ContextManager.getContextManager( pwmRequest ).getConfigReader();
         final StoredConfiguration storedConfig = runningConfigReader.getStoredConfiguration();
 
         try

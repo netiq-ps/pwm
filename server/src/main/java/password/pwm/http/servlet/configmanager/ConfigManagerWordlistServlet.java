@@ -40,7 +40,8 @@ import password.pwm.svc.wordlist.WordlistSourceType;
 import password.pwm.svc.wordlist.WordlistStatus;
 import password.pwm.svc.wordlist.WordlistType;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.EnumUtil;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.ws.server.RestResultBean;
@@ -56,6 +57,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @WebServlet(
@@ -92,7 +94,7 @@ public class ConfigManagerWordlistServlet extends AbstractPwmServlet
     protected Optional<ConfigManagerAction> readProcessAction( final PwmRequest request )
             throws PwmUnrecoverableException
     {
-        return JavaHelper.readEnumFromString( ConfigManagerAction.class, request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
+        return EnumUtil.readEnumFromString( ConfigManagerAction.class, request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
     }
 
     @Override
@@ -119,7 +121,7 @@ public class ConfigManagerWordlistServlet extends AbstractPwmServlet
                     return;
 
                 default:
-                    JavaHelper.unhandledSwitchStatement( processAction.get() );
+                    PwmUtil.unhandledSwitchStatement( processAction.get() );
             }
             return;
         }
@@ -132,7 +134,7 @@ public class ConfigManagerWordlistServlet extends AbstractPwmServlet
 
     {
         final HttpServletRequest req = pwmRequest.getHttpServletRequest();
-        final Optional<WordlistType> wordlistType = JavaHelper.readEnumFromString( WordlistType.class, pwmRequest.readParameterAsString( "wordlist" ) );
+        final Optional<WordlistType> wordlistType = EnumUtil.readEnumFromString( WordlistType.class, pwmRequest.readParameterAsString( "wordlist" ) );
 
         if ( wordlistType.isEmpty() )
         {
@@ -174,7 +176,7 @@ public class ConfigManagerWordlistServlet extends AbstractPwmServlet
     void restClearWordlist( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException
     {
-        final Optional<WordlistType> wordlistType = JavaHelper.readEnumFromString( WordlistType.class, pwmRequest.readParameterAsString( "wordlist" ) );
+        final Optional<WordlistType> wordlistType = EnumUtil.readEnumFromString( WordlistType.class, pwmRequest.readParameterAsString( "wordlist" ) );
 
         if ( wordlistType.isEmpty() )
         {
@@ -246,7 +248,7 @@ public class ConfigManagerWordlistServlet extends AbstractPwmServlet
                                 wordlistType.name() + "_populationTimestamp",
                                 DisplayElement.Type.timestamp,
                                 "Population Timestamp",
-                                JavaHelper.toIsoDate( wordlistStatus.getStoreDate() ) ) );
+                                StringUtil.toIsoDate( wordlistStatus.getStoreDate() ) ) );
                     }
                     if ( wordlistStatus.getRemoteInfo() != null && StringUtil.notEmpty( wordlistStatus.getRemoteInfo().getHash() ) )
                     {
@@ -268,7 +270,7 @@ public class ConfigManagerWordlistServlet extends AbstractPwmServlet
                             wordlistType.name() + "_lastImportAttempt",
                             DisplayElement.Type.timestamp,
                             "Last Import Attempt",
-                            JavaHelper.toIsoDate( wordlist.getAutoImportError().getDate() ) ) );
+                            StringUtil.toIsoDate( wordlist.getAutoImportError().getDate() ) ) );
                 }
 
                 if ( activity == Wordlist.Activity.Importing )
@@ -304,7 +306,7 @@ public class ConfigManagerWordlistServlet extends AbstractPwmServlet
             }
             outputData.put( wordlistType, builder.build() );
         }
-        pwmRequest.outputJsonResult( RestResultBean.withData( outputData ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( outputData, Map.class ) );
     }
 
     @Value

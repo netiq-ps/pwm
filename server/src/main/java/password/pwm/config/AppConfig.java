@@ -24,6 +24,7 @@ import password.pwm.AppProperty;
 import password.pwm.PwmConstants;
 import password.pwm.bean.DomainID;
 import password.pwm.bean.PrivateKeyCertificate;
+import password.pwm.bean.ProfileID;
 import password.pwm.config.option.CertificateMatchingMode;
 import password.pwm.config.option.DataStorageMethod;
 import password.pwm.config.profile.EmailServerProfile;
@@ -32,48 +33,55 @@ import password.pwm.config.stored.StoredConfiguration;
 import password.pwm.config.stored.StoredConfigurationFactory;
 import password.pwm.config.value.FileValue;
 import password.pwm.config.value.data.UserPermission;
+import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
+import password.pwm.error.PwmInternalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.i18n.PwmLocaleBundle;
 import password.pwm.util.PasswordData;
 import password.pwm.util.i18n.LocaleHelper;
+import password.pwm.util.java.CollectionUtil;
+import password.pwm.util.java.CollectorUtil;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.LazySupplier;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
-import password.pwm.util.logging.PwmLogLevel;
 import password.pwm.util.logging.PwmLogger;
+import password.pwm.util.secure.PwmRandom;
 import password.pwm.util.secure.PwmSecurityKey;
 
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
+import java.util.SortedMap;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 public class AppConfig implements SettingReader
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( AppConfig.class );
-    private final ConfigurationSuppliers configurationSuppliers = new ConfigurationSuppliers();
 
     private final StoredConfiguration storedConfiguration;
     private final StoredSettingReader settingReader;
     private final Map<DomainID, DomainConfig> domainConfigMap;
-    private final Set<String> domainIDList;
+    private final Set<String> domainIDs;
 
-    private static final Supplier<AppConfig> DEFAULT_CONFIG = new LazySupplier<>( () -> makeDefaultConfig() );
+    private final PwmSecurityKey applicationSecurityKey;
+    private final Map<AppProperty, String> appPropertyOverrides;
+    private final Map<Locale, String> localeFlagMap;
+
+    private static final Supplier<AppConfig> DEFAULT_CONFIG = LazySupplier.create( AppConfig::makeDefaultConfig );
 
     private static AppConfig makeDefaultConfig()
     {
         try
         {
-            return new AppConfig( StoredConfigurationFactory.newConfig() );
+            return forStoredConfig( StoredConfigurationFactory.newConfig() );
         }
         catch ( final PwmUnrecoverableException e )
         {
@@ -86,31 +94,38 @@ public class AppConfig implements SettingReader
         return DEFAULT_CONFIG.get();
     }
 
-    public AppConfig( final StoredConfiguration storedConfiguration )
+    private AppConfig( final StoredConfiguration storedConfiguration )
     {
         this.storedConfiguration = storedConfiguration;
         this.settingReader = new StoredSettingReader( storedConfiguration, null, DomainID.systemId() );
+        this.appPropertyOverrides = makeAppPropertyOverrides( settingReader );
 
-        this.domainIDList = Collections.unmodifiableSet( new TreeSet<>( settingReader.readSettingAsStringArray( PwmSetting.DOMAIN_LIST ).stream()
-                .sorted()
-                .collect( Collectors.toList() ) ) );
+        this.applicationSecurityKey = makeAppSecurityKey( this );
 
-        this.domainConfigMap = domainIDList.stream()
-                .collect( Collectors.toUnmodifiableMap(
+        this.localeFlagMap = makeLocaleFlagMap( this );
+
+        this.domainIDs = Set.copyOf( new TreeSet<>( settingReader.readSettingAsStringArray( PwmSetting.DOMAIN_LIST ) ) );
+
+        this.domainConfigMap = domainIDs.stream()
+                .collect( CollectorUtil.toUnmodifiableLinkedMap(
                         DomainID::create,
                         ( domainID ) -> new DomainConfig( this, DomainID.create( domainID ) ) ) );
     }
 
+    public static AppConfig forStoredConfig( final StoredConfiguration storedConfiguration )
+    {
+        return new AppConfig( storedConfiguration );
+    }
+
     public Set<String> getDomainIDs()
     {
-        return domainIDList;
+        return domainIDs;
     }
 
     public Map<DomainID, DomainConfig> getDomainConfigs()
     {
         return domainConfigMap;
     }
-
 
     public DomainID getAdminDomainID()
             throws PwmUnrecoverableException
@@ -135,7 +150,7 @@ public class AppConfig implements SettingReader
 
     public String readAppProperty( final AppProperty property )
     {
-        return configurationSuppliers.appPropertyOverrides.get().getOrDefault( property.getKey(), property.getDefaultValue() );
+        return appPropertyOverrides.getOrDefault( property, property.getDefaultValue() );
     }
 
     public boolean readBooleanAppProperty( final AppProperty appProperty )
@@ -165,17 +180,16 @@ public class AppConfig implements SettingReader
 
     public Map<AppProperty, String> readAllNonDefaultAppProperties( )
     {
-        final LinkedHashMap<AppProperty, String> nonDefaultProperties = new LinkedHashMap<>();
-        for ( final AppProperty loopProperty : AppProperty.values() )
-        {
-            final String configuredValue = readAppProperty( loopProperty );
-            final String defaultValue = loopProperty.getDefaultValue();
-            if ( configuredValue != null && !configuredValue.equals( defaultValue ) )
-            {
-                nonDefaultProperties.put( loopProperty, configuredValue );
-            }
-        }
-        return Collections.unmodifiableMap( nonDefaultProperties );
+        return appPropertyOverrides;
+    }
+
+    public Map<AppProperty, String> readAllAppProperties()
+    {
+        return EnumUtil.enumStream( AppProperty.class )
+                .collect( CollectorUtil.toLinkedMap(
+                        Function.identity(),
+                        this::readAppProperty
+                ) );
     }
 
     public StoredConfiguration getStoredConfiguration()
@@ -185,7 +199,7 @@ public class AppConfig implements SettingReader
 
     public PwmSecurityKey getSecurityKey() throws PwmUnrecoverableException
     {
-        return configurationSuppliers.pwmSecurityKey.call();
+        return applicationSecurityKey;
     }
 
     @Override
@@ -206,11 +220,6 @@ public class AppConfig implements SettingReader
         return settingReader.readSettingAsStringArray( pwmSetting );
     }
 
-    public PwmLogLevel getEventLogLocalDBLevel()
-    {
-        return readSettingAsEnum( PwmSetting.EVENTS_LOCALDB_LOG_LEVEL, PwmLogLevel.class );
-    }
-
     public boolean isDevDebugMode()
     {
         return Boolean.parseBoolean( readAppProperty( AppProperty.LOGGING_DEV_OUTPUT ) );
@@ -224,12 +233,12 @@ public class AppConfig implements SettingReader
 
     public Map<Locale, String> getKnownLocaleFlagMap( )
     {
-        return configurationSuppliers.localeFlagMap.get();
+        return localeFlagMap;
     }
 
     public List<Locale> getKnownLocales( )
     {
-        return List.copyOf( configurationSuppliers.localeFlagMap.get().keySet() );
+        return List.copyOf( localeFlagMap.keySet() );
     }
 
     @Override
@@ -257,13 +266,25 @@ public class AppConfig implements SettingReader
     }
 
     @Override
+    public String readSettingAsLocalizedString( final PwmSetting setting, final Locale locale )
+    {
+        return settingReader.readSettingAsLocalizedString( setting, locale );
+    }
+
+    @Override
+    public List<String> readSettingAsLocalizedStringArray( final PwmSetting setting, final Locale locale )
+    {
+        return settingReader.readSettingAsLocalizedStringArray( setting, locale );
+    }
+
+    @Override
     public List<UserPermission> readSettingAsUserPermission( final PwmSetting pwmSetting )
     {
         return settingReader.readSettingAsUserPermission( pwmSetting );
     }
 
     @Override
-    public Map<Locale, String> readLocalizedBundle( final PwmLocaleBundle className, final String keyName )
+    public Optional<Map<Locale, String>> readLocalizedBundle( final PwmLocaleBundle className, final String keyName )
     {
         return settingReader.readLocalizedBundle( className, keyName );
     }
@@ -273,63 +294,9 @@ public class AppConfig implements SettingReader
         return settingReader.readGenericStorageLocations( setting );
     }
 
-    private class ConfigurationSuppliers
+    public Map<ProfileID, EmailServerProfile> getEmailServerProfiles( )
     {
-        private final Supplier<Map<String, String>> appPropertyOverrides = new LazySupplier<>( () ->
-                StringUtil.convertStringListToNameValuePair(
-                        settingReader.readSettingAsStringArray( PwmSetting.APP_PROPERTY_OVERRIDES ), "=" ) );
-
-        private final LazySupplier.CheckedSupplier<PwmSecurityKey, PwmUnrecoverableException> pwmSecurityKey
-                = LazySupplier.checked( () ->
-                settingReader.readSecurityKey( PwmSetting.PWM_SECURITY_KEY, AppConfig.this ) );
-
-        private final Supplier<Map<Locale, String>> localeFlagMap = new LazySupplier<>( () ->
-        {
-            final String defaultLocaleAsString = PwmConstants.DEFAULT_LOCALE.toString();
-
-            final List<String> inputList = readSettingAsStringArray( PwmSetting.KNOWN_LOCALES );
-            final Map<String, String> inputMap = StringUtil.convertStringListToNameValuePair( inputList, "::" );
-
-            // Sort the map by display name
-            final Map<String, String> sortedMap = new TreeMap<>();
-            for ( final String localeString : inputMap.keySet() )
-            {
-                final Locale theLocale = LocaleHelper.parseLocaleString( localeString );
-                if ( theLocale != null )
-                {
-                    sortedMap.put( theLocale.getDisplayName(), localeString );
-                }
-            }
-
-            final List<String> returnList = new ArrayList<>();
-
-            //ensure default is first.
-            returnList.add( defaultLocaleAsString );
-            for ( final String localeString : sortedMap.values() )
-            {
-                if ( !defaultLocaleAsString.equals( localeString ) )
-                {
-                    returnList.add( localeString );
-                }
-            }
-
-            final Map<Locale, String> localeFlagMap = new LinkedHashMap<>();
-            for ( final String localeString : returnList )
-            {
-                final Locale loopLocale = LocaleHelper.parseLocaleString( localeString );
-                if ( loopLocale != null )
-                {
-                    final String flagCode = inputMap.containsKey( localeString ) ? inputMap.get( localeString ) : loopLocale.getCountry();
-                    localeFlagMap.put( loopLocale, flagCode );
-                }
-            }
-            return Collections.unmodifiableMap( localeFlagMap );
-        } );
-    }
-
-    public Map<String, EmailServerProfile> getEmailServerProfiles( )
-    {
-        return settingReader.getProfileMap( ProfileDefinition.EmailServers, DomainID.systemId() );
+        return settingReader.getProfileMap( ProfileDefinition.EmailServers );
     }
 
     public CertificateMatchingMode readCertificateMatchingMode()
@@ -357,5 +324,107 @@ public class AppConfig implements SettingReader
     public boolean isMultiDomain()
     {
         return this.getDomainConfigs().size() > 1;
+    }
+
+    private static Map<AppProperty, String> makeAppPropertyOverrides( final SettingReader settingReader )
+    {
+        final List<String> settingValues = settingReader.readSettingAsStringArray( PwmSetting.APP_PROPERTY_OVERRIDES );
+
+        final Map<String, String> stringMap =  StringUtil.convertStringListToNameValuePair( settingValues, "=" );
+
+        final Map<AppProperty, String> appPropertyMap = new EnumMap<>( AppProperty.class );
+        for ( final Map.Entry<String, String> stringEntry : stringMap.entrySet() )
+        {
+            AppProperty.forKey( stringEntry.getKey() )
+                    .ifPresent( appProperty ->
+                    {
+                        if ( !appProperty.isDefaultValue( stringEntry.getValue() ) )
+                        {
+                            appPropertyMap.put( appProperty, stringEntry.getValue() );
+                        }
+                    } );
+        }
+
+        return CollectionUtil.unmodifiableEnumMap( appPropertyMap, AppProperty.class );
+    }
+
+    public boolean isSmsConfigured()
+    {
+        final String gatewayUrl = readSettingAsString( PwmSetting.SMS_GATEWAY_URL );
+        final String gatewayUser = readSettingAsString( PwmSetting.SMS_GATEWAY_USER );
+        final PasswordData gatewayPass = readSettingAsPassword( PwmSetting.SMS_GATEWAY_PASSWORD );
+
+        if ( StringUtil.isEmpty( gatewayUrl ) )
+        {
+            return false;
+        }
+
+        if ( !StringUtil.isEmpty( gatewayUser ) && gatewayPass == null )
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+
+    private static PwmSecurityKey makeAppSecurityKey( final AppConfig appConfig )
+    {
+        try
+        {
+            final PasswordData configValue = appConfig.readSettingAsPassword( PwmSetting.PWM_SECURITY_KEY );
+
+            if ( configValue == null || configValue.getStringValue().isEmpty() )
+            {
+                final String errorMsg = "Security Key value is not configured, will generate temp value for use by runtime instance";
+                final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_INVALID_SECURITY_KEY, errorMsg );
+                LOGGER.warn( errorInfo::toDebugStr );
+                return new PwmSecurityKey( PwmRandom.getInstance().alphaNumericString( 1024 ) );
+            }
+            else
+            {
+                final int minSecurityKeyLength = Integer.parseInt( appConfig.readAppProperty( AppProperty.SECURITY_CONFIG_MIN_SECURITY_KEY_LENGTH ) );
+                if ( configValue.getStringValue().length() < minSecurityKeyLength )
+                {
+                    final String errorMsg = "Security Key must be greater than 32 characters in length";
+                    final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_INVALID_SECURITY_KEY, errorMsg );
+                    throw new PwmUnrecoverableException( errorInfo );
+                }
+
+                try
+                {
+                    return new PwmSecurityKey( configValue.getStringValue() );
+                }
+                catch ( final Exception e )
+                {
+                    final String errorMsg = "unexpected error generating Security Key crypto: " + e.getMessage();
+                    final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_INVALID_SECURITY_KEY, errorMsg );
+                    LOGGER.error( errorInfo::toDebugStr, e );
+                    throw new PwmUnrecoverableException( errorInfo );
+                }
+            }
+        }
+        catch ( final PwmUnrecoverableException e )
+        {
+            throw PwmInternalException.fromPwmException( "error reading security key from configuration", e );
+        }
+    }
+
+    private static SortedMap<Locale, String> makeLocaleFlagMap( final AppConfig appConfig )
+    {
+        final List<String> inputList = appConfig.readSettingAsStringArray( PwmSetting.KNOWN_LOCALES );
+        final Map<String, String> inputMap = StringUtil.convertStringListToNameValuePair( inputList, "::" );
+
+        return inputMap.keySet().stream()
+                .collect( CollectorUtil.toUnmodifiableSortedMap(
+                        LocaleHelper::parseLocaleString,
+                        s -> inputMap.getOrDefault( s, LocaleHelper.parseLocaleString( s ).getCountry() ),
+                        LocaleHelper.localeDisplayComparator() ) );
+    }
+
+    @Override
+    public String getValueHash()
+    {
+        return settingReader.getValueHash();
     }
 }

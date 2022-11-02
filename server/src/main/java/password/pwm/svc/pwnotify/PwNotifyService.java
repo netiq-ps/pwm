@@ -38,7 +38,7 @@ import password.pwm.svc.PwmService;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.util.PwmScheduler;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
@@ -50,13 +50,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
 
 public class PwNotifyService extends AbstractPwmService implements PwmService
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( PwNotifyService.class );
 
-    private ExecutorService executorService;
     private PwmDomain pwmDomain;
     private PwNotifyEngine engine;
     private PwNotifySettings settings;
@@ -137,14 +135,12 @@ public class PwNotifyService extends AbstractPwmService implements PwmService
                 break;
 
                 default:
-                    JavaHelper.unhandledSwitchStatement( storageMethod );
+                    PwmUtil.unhandledSwitchStatement( storageMethod );
             }
-
-            executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, this.getClass() );
 
             engine = new PwNotifyEngine( this, pwmDomain, storageService, null );
 
-            pwmDomain.getPwmApplication().getPwmScheduler().scheduleFixedRateJob( new PwNotifyJob(), executorService, TimeDuration.MINUTE, TimeDuration.MINUTE );
+            scheduleFixedRateJob( new PwNotifyJob(), TimeDuration.MINUTE, TimeDuration.MINUTE );
         }
         catch ( final PwmUnrecoverableException e )
         {
@@ -168,7 +164,7 @@ public class PwNotifyService extends AbstractPwmService implements PwmService
         try
         {
             nextExecutionTime = figureNextJobExecutionTime();
-            LOGGER.debug( getSessionLabel(), () -> "scheduled next job execution at " + nextExecutionTime.toString() );
+            LOGGER.debug( getSessionLabel(), () -> "scheduled next job execution at " + StringUtil.toIsoDate( nextExecutionTime ) );
         }
         catch ( final Exception e )
         {
@@ -208,10 +204,9 @@ public class PwNotifyService extends AbstractPwmService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         setStatus( STATUS.CLOSED );
-        JavaHelper.closeAndWaitExecutor( executorService, TimeDuration.of( 5, TimeDuration.Unit.SECONDS ) );
     }
 
     @Override
@@ -261,7 +256,7 @@ public class PwNotifyService extends AbstractPwmService implements PwmService
         if ( !isRunning() )
         {
             nextExecutionTime = Instant.now();
-            pwmDomain.getPwmApplication().getPwmScheduler().scheduleJob( new PwNotifyJob(), executorService, TimeDuration.ZERO );
+           scheduleJob( new PwNotifyJob() );
         }
     }
 

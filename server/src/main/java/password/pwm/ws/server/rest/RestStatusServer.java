@@ -30,11 +30,12 @@ import password.pwm.error.PwmException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.HttpContentType;
 import password.pwm.http.HttpMethod;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
+import password.pwm.user.UserInfoBean;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
@@ -90,7 +91,7 @@ public class RestStatusServer extends RestServlet
                     targetUserIdentity.getUserIdentity()
             );
 
-            final PublicUserInfoBean publicUserInfoBean = PublicUserInfoBean.fromUserInfoBean(
+            final PublicUserInfoBean publicUserInfoBean = UserInfoBean.toPublicUserInfoBean(
                     userInfo,
                     restRequest.getDomain().getConfig(),
                     restRequest.getLocale(),
@@ -99,9 +100,9 @@ public class RestStatusServer extends RestServlet
 
             StatisticsClient.incrementStat( restRequest.getDomain(), Statistic.REST_STATUS );
 
-            final RestResultBean restResultBean = RestResultBean.withData( publicUserInfoBean );
+            final RestResultBean restResultBean = RestResultBean.withData( publicUserInfoBean, PublicUserInfoBean.class );
             LOGGER.debug( restRequest.getSessionLabel(), () -> "completed REST status request, result="
-                    + JsonUtil.serialize( restResultBean ), () -> TimeDuration.fromCurrent( startTime ) );
+                    + JsonFactory.get().serialize( restResultBean ), TimeDuration.fromCurrent( startTime ) );
             return restResultBean;
         }
         catch ( final PwmException e )

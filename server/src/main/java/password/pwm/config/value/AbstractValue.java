@@ -20,24 +20,26 @@
 
 package password.pwm.config.value;
 
+import org.jrivard.xmlchai.XmlChai;
+import org.jrivard.xmlchai.XmlDocument;
+import org.jrivard.xmlchai.XmlElement;
 import password.pwm.PwmConstants;
 import password.pwm.config.stored.StoredConfigXmlConstants;
 import password.pwm.config.stored.XmlOutputProcessData;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.http.bean.ImmutableByteArray;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.data.ImmutableByteArray;
+import password.pwm.util.java.JavaHelper;
 import password.pwm.util.java.LazySupplier;
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.XmlDocument;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
+import password.pwm.util.json.JsonFactory;
+import password.pwm.util.json.JsonProvider;
 import password.pwm.util.secure.PwmHashAlgorithm;
 import password.pwm.util.secure.PwmSecurityKey;
-import password.pwm.util.secure.SecureEngine;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.Serializable;
+import java.security.DigestOutputStream;
 import java.util.List;
 import java.util.Locale;
 
@@ -57,7 +59,7 @@ public abstract class AbstractValue implements StoredValue
         }
     }
 
-    private final transient LazySupplier<String> valueHashSupplier = new LazySupplier<>( () -> valueHashComputer( AbstractValue.this ) );
+    private final transient LazySupplier<String> valueHashSupplier = LazySupplier.create( () -> valueHashComputer( AbstractValue.this ) );
 
     public String toString()
     {
@@ -67,7 +69,7 @@ public abstract class AbstractValue implements StoredValue
     @Override
     public String toDebugString( final Locale locale )
     {
-        return JsonUtil.serialize( ( Serializable ) this.toNativeObject(), JsonUtil.Flag.PrettyPrint );
+        return JsonFactory.get().serialize( ( Serializable ) this.toNativeObject(), JsonProvider.Flag.PrettyPrint );
     }
 
     @Override
@@ -89,7 +91,6 @@ public abstract class AbstractValue implements StoredValue
     }
 
     protected static String b64encode( final ImmutableByteArray immutableByteArray )
-            throws PwmUnrecoverableException
     {
         final String input = StringUtil.base64Encode( immutableByteArray.copyOf(), StringUtil.Base64Options.GZIP );
         return "\n" + StringUtil.insertRepeatedLineBreaks( input, PwmConstants.XML_OUTPUT_LINE_WRAP_LENGTH ) + "\n";
@@ -118,17 +119,19 @@ public abstract class AbstractValue implements StoredValue
                     .storedValueEncoderMode( StoredValueEncoder.Mode.PLAIN )
                     .build();
             final List<XmlElement> xmlValues = storedValue.toXmlValues( StoredConfigXmlConstants.XML_ELEMENT_VALUE, xmlOutputProcessData );
-            final XmlDocument document = XmlFactory.getFactory().newDocument( "root" );
-            document.getRootElement().addContent( xmlValues );
-            final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-            XmlFactory.getFactory().outputDocument( document, byteArrayOutputStream );
-            final byte[] bytesToHash = byteArrayOutputStream.toByteArray();
-            return SecureEngine.hash( bytesToHash, PwmHashAlgorithm.SHA512 );
+            final XmlDocument document = XmlChai.getFactory().newDocument( "root" );
+            document.getRootElement().attachElement( xmlValues );
 
+            final DigestOutputStream digestOutputStream = new DigestOutputStream(
+                    OutputStream.nullOutputStream(),
+                    PwmHashAlgorithm.SHA512.newMessageDigest() );
+            XmlChai.getFactory().output( document, digestOutputStream );
+            return JavaHelper.binaryArrayToHex( digestOutputStream.getMessageDigest().digest() );
         }
-        catch ( final IOException | PwmUnrecoverableException e )
+        catch ( final IOException e )
         {
             throw new IllegalStateException( e );
         }
     }
+
 }

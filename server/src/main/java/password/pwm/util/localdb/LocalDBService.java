@@ -53,6 +53,12 @@ public class LocalDBService implements PwmService
     }
 
     @Override
+    public String name()
+    {
+        return LocalDBService.class.getSimpleName();
+    }
+
+    @Override
     public void init( final PwmApplication pwmApplication, final DomainID domainID ) throws PwmException
     {
         this.pwmApplication = pwmApplication;
@@ -72,7 +78,7 @@ public class LocalDBService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdown( )
     {
         //no-op
     }

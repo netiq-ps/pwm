@@ -20,7 +20,8 @@
 
 package password.pwm.config.value;
 
-import com.google.gson.reflect.TypeToken;
+import org.jrivard.xmlchai.XmlChai;
+import org.jrivard.xmlchai.XmlElement;
 import password.pwm.PwmConstants;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.stored.StoredConfigXmlConstants;
@@ -28,14 +29,13 @@ import password.pwm.config.stored.XmlOutputProcessData;
 import password.pwm.config.value.data.NamedSecretData;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
+import password.pwm.error.PwmInternalException;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.PasswordData;
-import password.pwm.util.java.JsonUtil;
 import password.pwm.util.java.LazySupplier;
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.secure.PwmBlockAlgorithm;
 import password.pwm.util.secure.PwmSecurityKey;
 import password.pwm.util.secure.SecureEngine;
@@ -53,7 +53,7 @@ public class NamedSecretValue implements StoredValue
 {
     private static final long serialVersionUID = 1L;
 
-    private final transient LazySupplier<String> valueHashSupplier = new LazySupplier<>( () -> AbstractValue.valueHashComputer( NamedSecretValue.this ) );
+    private final transient LazySupplier<String> valueHashSupplier = LazySupplier.create( () -> AbstractValue.valueHashComputer( NamedSecretValue.this ) );
 
     private static final String ELEMENT_NAME = "name";
     private static final String ELEMENT_PASSWORD = "password";
@@ -76,13 +76,11 @@ public class NamedSecretValue implements StoredValue
         return new StoredValue.StoredValueFactory()
         {
             @Override
-            public NamedSecretValue fromJson( final String value )
+            public NamedSecretValue fromJson( final PwmSetting pwmSetting, final String value )
             {
                 try
                 {
-                    final Map<String, NamedSecretData> values = JsonUtil.deserialize( value, new TypeToken<Map<String, NamedSecretData>>()
-                    {
-                    }.getType() );
+                    final Map<String, NamedSecretData> values = JsonFactory.get().deserializeMap( value, String.class, NamedSecretData.class );
                     final Map<String, NamedSecretData> linkedValues = new LinkedHashMap<>( values );
                     return new NamedSecretValue( linkedValues );
                 }
@@ -170,7 +168,7 @@ public class NamedSecretValue implements StoredValue
     {
         if ( values == null )
         {
-            final XmlElement valueElement = XmlFactory.getFactory().newElement( valueElementName );
+            final XmlElement valueElement = XmlChai.getFactory().newElement( valueElementName );
             return Collections.singletonList( valueElement );
         }
         final List<XmlElement> valuesElement = new ArrayList<>();
@@ -181,20 +179,20 @@ public class NamedSecretValue implements StoredValue
                 final String name = entry.getKey();
                 final PasswordData passwordData = entry.getValue().getPassword();
                 final String encodedValue = SecureEngine.encryptToString( passwordData.getStringValue(), xmlOutputProcessData.getPwmSecurityKey(), PwmBlockAlgorithm.CONFIG );
-                final XmlElement newValueElement = XmlFactory.getFactory().newElement( "value" );
-                final XmlElement nameElement = XmlFactory.getFactory().newElement( ELEMENT_NAME );
-                nameElement.addText( name );
-                final XmlElement encodedValueElement = XmlFactory.getFactory().newElement( ELEMENT_PASSWORD );
-                encodedValueElement.addText( encodedValue );
+                final XmlElement newValueElement = XmlChai.getFactory().newElement( "value" );
+                final XmlElement nameElement = XmlChai.getFactory().newElement( ELEMENT_NAME );
+                nameElement.setText( name );
+                final XmlElement encodedValueElement = XmlChai.getFactory().newElement( ELEMENT_PASSWORD );
+                encodedValueElement.setText( encodedValue );
 
-                newValueElement.addContent( nameElement );
-                newValueElement.addContent( encodedValueElement );
+                newValueElement.attachElement( nameElement );
+                newValueElement.attachElement( encodedValueElement );
 
                 for ( final String usages : values.get( name ).getUsage() )
                 {
-                    final XmlElement usageElement = XmlFactory.getFactory().newElement( ELEMENT_USAGE );
-                    usageElement.addText( usages );
-                    newValueElement.addContent( usageElement );
+                    final XmlElement usageElement = XmlChai.getFactory().newElement( ELEMENT_USAGE );
+                    usageElement.setText( usages );
+                    newValueElement.attachElement( usageElement );
                 }
 
 
@@ -203,7 +201,7 @@ public class NamedSecretValue implements StoredValue
         }
         catch ( final Exception e )
         {
-            throw new RuntimeException( "missing required AES and SHA1 libraries, or other crypto fault: " + e.getMessage() );
+            throw new PwmInternalException( "missing required AES and SHA1 libraries, or other crypto fault: " + e.getMessage() );
         }
         return Collections.unmodifiableList( valuesElement );
     }
@@ -222,7 +220,7 @@ public class NamedSecretValue implements StoredValue
             final NamedSecretData existingData = entry.getValue();
             sb.append( "Named password '" ).append( entry.getKey() ).append( "' with usage for " );
             sb.append( StringUtil.collectionToString( existingData.getUsage(), "," ) );
-            sb.append( "\n" );
+            sb.append( '\n' );
 
         }
         return sb.toString();

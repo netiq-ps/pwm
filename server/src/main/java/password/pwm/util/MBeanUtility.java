@@ -25,6 +25,7 @@ import lombok.Getter;
 import password.pwm.PwmAboutProperty;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
+import password.pwm.util.java.JavaHelper;
 import password.pwm.util.logging.PwmLogger;
 
 import javax.management.Attribute;
@@ -51,8 +52,9 @@ public class MBeanUtility
             final MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
             final ObjectName name = figureMBeanName( pwmApplication );
             final Map<PwmAboutProperty, String> aboutMap = PwmAboutProperty.makeInfoBean( pwmApplication );
-            final Map<String, String> outputMap = new HashMap<>(  );
-            final AttributeList attributeList = new AttributeList(  );
+
+            final Map<String, String> outputMap = new HashMap<>( aboutMap.size() );
+            final AttributeList attributeList = new AttributeList( aboutMap.size() );
             for ( final Map.Entry<PwmAboutProperty, String> entry : aboutMap.entrySet() )
             {
                 outputMap.put( entry.getKey().name(), entry.getValue() );
@@ -77,7 +79,7 @@ public class MBeanUtility
         }
         catch ( final Exception e )
         {
-            LOGGER.debug( () -> "error unregistering mbean: " + e.getMessage() );
+            LOGGER.debug( () -> "error unregistering mbean: " + JavaHelper.readHostileExceptionMessage( e ) );
         }
     }
 

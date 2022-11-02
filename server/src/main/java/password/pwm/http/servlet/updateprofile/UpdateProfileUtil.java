@@ -42,7 +42,7 @@ import password.pwm.http.PwmRequest;
 import password.pwm.http.PwmRequestAttribute;
 import password.pwm.http.bean.UpdateProfileBean;
 import password.pwm.ldap.LdapOperationsHelper;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
@@ -212,7 +212,7 @@ public class UpdateProfileUtil
     {
 
         final List<FormConfiguration> form = updateProfileProfile.readSettingAsForm( PwmSetting.UPDATE_PROFILE_FORM );
-        final Map<FormConfiguration, String> formValueMap = new LinkedHashMap<>();
+        final Map<FormConfiguration, String> formValueMap = new LinkedHashMap<>( form.size() );
         for ( final FormConfiguration formConfiguration : form )
         {
             formValueMap.put(
@@ -272,9 +272,10 @@ public class UpdateProfileUtil
                 {
                     iter.remove();
                 }
-                else if ( updateData.containsKey( attrName ) )
+
+                final String updateValue = updateData.get( attrName );
+                if ( updateValue != null )
                 {
-                    final String updateValue = updateData.get( attrName );
                     final String ldapValue = ldapData.get( attrName );
                     if ( StringUtil.nullSafeEqualsIgnoreCase( updateValue, ldapValue ) )
                     {
@@ -366,7 +367,7 @@ public class UpdateProfileUtil
         // write values.
         LOGGER.info( sessionLabel, () -> "updating profile for " + userInfo.getUserIdentity() );
 
-        LdapOperationsHelper.writeFormValuesToLdap( theUser, formMap, macroRequest, false );
+        LdapOperationsHelper.writeFormValuesToLdap( sessionLabel, theUser, formMap, macroRequest, false );
 
         postUpdateActionsAndEmail( pwmDomain, sessionLabel, locale, userInfo.getUserIdentity(), updateProfileProfile );
 

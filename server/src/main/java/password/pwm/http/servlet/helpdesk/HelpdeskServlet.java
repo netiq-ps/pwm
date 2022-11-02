@@ -31,6 +31,7 @@ import password.pwm.AppProperty;
 import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
 import password.pwm.bean.EmailItemBean;
+import password.pwm.bean.PhotoDataBean;
 import password.pwm.bean.TokenDestinationItem;
 import password.pwm.bean.UserIdentity;
 import password.pwm.config.DomainConfig;
@@ -61,12 +62,10 @@ import password.pwm.http.servlet.peoplesearch.PhotoDataReader;
 import password.pwm.http.servlet.peoplesearch.SearchRequestBean;
 import password.pwm.i18n.Message;
 import password.pwm.ldap.LdapOperationsHelper;
-import password.pwm.ldap.PhotoDataBean;
-import password.pwm.ldap.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.ldap.search.SearchConfiguration;
-import password.pwm.ldap.search.UserSearchEngine;
 import password.pwm.ldap.search.UserSearchResults;
+import password.pwm.ldap.search.UserSearchService;
 import password.pwm.svc.cr.CrService;
 import password.pwm.svc.event.AuditEvent;
 import password.pwm.svc.event.AuditRecordFactory;
@@ -80,16 +79,20 @@ import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.svc.token.TokenService;
 import password.pwm.svc.token.TokenUtil;
+import password.pwm.user.UserInfo;
 import password.pwm.util.PasswordData;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.java.PwmTimeUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
 import password.pwm.util.operations.ActionExecutor;
 import password.pwm.util.password.PasswordUtility;
+import password.pwm.util.password.RandomGeneratorConfig;
 import password.pwm.util.password.RandomPasswordGenerator;
 import password.pwm.ws.server.RestResultBean;
 import password.pwm.ws.server.rest.RestCheckPasswordServer;
@@ -125,8 +128,13 @@ import java.util.concurrent.Callable;
 )
 public class HelpdeskServlet extends ControlledPwmServlet
 {
-
     private static final PwmLogger LOGGER = PwmLogger.forClass( HelpdeskServlet.class );
+
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
 
     public enum HelpdeskAction implements AbstractPwmServlet.ProcessAction
     {
@@ -220,26 +228,24 @@ public class HelpdeskServlet extends ControlledPwmServlet
         return ProcessStatus.Continue;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "clientData" )
-    private ProcessStatus restClientData( final PwmRequest pwmRequest )
+    public ProcessStatus restClientData( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException
     {
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
         final HelpdeskClientDataBean returnValues = HelpdeskClientDataBean.fromConfig( helpdeskProfile, pwmRequest.getLocale() );
 
-        final RestResultBean restResultBean = RestResultBean.withData( returnValues );
-        LOGGER.trace( pwmRequest, () -> "returning clientData: " + JsonUtil.serialize( restResultBean ) );
+        final RestResultBean restResultBean = RestResultBean.withData( returnValues, HelpdeskClientDataBean.class );
+        LOGGER.trace( pwmRequest, () -> "returning clientData: " + JsonFactory.get().serialize( restResultBean ) );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "executeAction" )
-    private ProcessStatus processExecuteActionRequest(
+    public ProcessStatus processExecuteActionRequest(
             final PwmRequest pwmRequest
     )
-            throws ChaiUnavailableException, PwmUnrecoverableException, IOException, ServletException
+            throws PwmUnrecoverableException, IOException, ServletException
     {
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
         final String userKey = pwmRequest.readBodyAsJsonStringMap( PwmHttpRequestWrapper.Flag.BypassValidation ).get( PwmConstants.PARAM_USERKEY );
@@ -250,7 +256,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             pwmRequest.respondWithError( errorInformation, false );
             return ProcessStatus.Halt;
         }
-        final UserIdentity targetUserIdentity = UserIdentity.fromKey( pwmRequest.getLabel(), userKey, pwmRequest.getPwmApplication() );
+        final UserIdentity targetUserIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, userKey );
         LOGGER.debug( pwmRequest, () -> "received executeAction request for user " + targetUserIdentity.toString() );
 
         final List<ActionConfiguration> actionConfigurations = helpdeskProfile.readSettingAsAction( PwmSetting.HELPDESK_ACTIONS );
@@ -321,9 +327,8 @@ public class HelpdeskServlet extends ControlledPwmServlet
         }
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "deleteUser" )
-    private ProcessStatus restDeleteUserRequest(
+    public ProcessStatus restDeleteUserRequest(
             final PwmRequest pwmRequest
     )
             throws ChaiUnavailableException, PwmUnrecoverableException, IOException, ServletException
@@ -341,7 +346,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             return ProcessStatus.Halt;
         }
 
-        final UserIdentity userIdentity = UserIdentity.fromKey( pwmRequest.getLabel(), userKey, pwmRequest.getPwmApplication() );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, userKey );
         LOGGER.info( pwmRequest, () -> "received deleteUser request by " + pwmSession.getUserInfo().getUserIdentity().toString() + " for user " + userIdentity.toString() );
 
         // check if user should be seen by actor
@@ -366,7 +371,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
         // execute user delete operation
         final ChaiProvider provider = helpdeskProfile.readSettingAsBoolean( PwmSetting.HELPDESK_USE_PROXY )
                 ? pwmDomain.getProxyChaiProvider( pwmRequest.getLabel(), userIdentity.getLdapProfileID() )
-                : pwmSession.getSessionManager().getChaiProvider();
+                : pwmRequest.getClientConnectionHolder().getActor().getChaiProvider();
 
 
         try
@@ -375,7 +380,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
         }
         catch ( final ChaiOperationException e )
         {
-            final String errorMsg = "error while attempting to delete user " + userIdentity.toString() + ", error: " + e.getMessage();
+            final String errorMsg = "error while attempting to delete user " + userIdentity + ", error: " + e.getMessage();
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_INTERNAL, errorMsg );
             LOGGER.debug( pwmRequest, () -> errorMsg );
             pwmRequest.outputJsonResult( RestResultBean.fromError( errorInformation, pwmRequest ) );
@@ -410,9 +415,8 @@ public class HelpdeskServlet extends ControlledPwmServlet
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "detail" )
-    private ProcessStatus processDetailRequest(
+    public ProcessStatus processDetailRequest(
             final PwmRequest pwmRequest
     )
             throws ChaiUnavailableException, PwmUnrecoverableException, IOException, ServletException
@@ -421,14 +425,13 @@ public class HelpdeskServlet extends ControlledPwmServlet
         final UserIdentity userIdentity = readUserKeyRequestParameter( pwmRequest );
         final HelpdeskDetailInfoBean helpdeskDetailInfoBean = HelpdeskServletUtil.processDetailRequestImpl( pwmRequest, helpdeskProfile, userIdentity );
 
-        final RestResultBean restResultBean = RestResultBean.withData( helpdeskDetailInfoBean );
+        final RestResultBean restResultBean = RestResultBean.withData( helpdeskDetailInfoBean, HelpdeskDetailInfoBean.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "card" )
-    private ProcessStatus processCardRequest(
+    public ProcessStatus processCardRequest(
             final PwmRequest pwmRequest
     )
             throws ChaiUnavailableException, PwmUnrecoverableException, IOException, ServletException
@@ -440,20 +443,19 @@ public class HelpdeskServlet extends ControlledPwmServlet
 
         final HelpdeskCardInfoBean helpdeskCardInfoBean = HelpdeskCardInfoBean.makeHelpdeskCardInfo( pwmRequest, helpdeskProfile, userIdentity );
 
-        final RestResultBean restResultBean = RestResultBean.withData( helpdeskCardInfoBean );
+        final RestResultBean restResultBean = RestResultBean.withData( helpdeskCardInfoBean, HelpdeskCardInfoBean.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "search" )
-    private ProcessStatus restSearchRequest(
+    public ProcessStatus restSearchRequest(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, IOException
     {
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
-        final HelpdeskSearchRequestBean searchRequest = JsonUtil.deserialize( pwmRequest.readRequestBodyAsString(), HelpdeskSearchRequestBean.class );
+        final HelpdeskSearchRequestBean searchRequest = pwmRequest.readBodyAsJsonObject( HelpdeskSearchRequestBean.class );
         final HelpdeskSearchResultsBean searchResultsBean;
 
         try
@@ -465,7 +467,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             throw new PwmUnrecoverableException( e.getErrorInformation() );
         }
 
-        final RestResultBean restResultBean = RestResultBean.withData( searchResultsBean );
+        final RestResultBean restResultBean = RestResultBean.withData( searchResultsBean, HelpdeskSearchResultsBean.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
 
@@ -475,7 +477,8 @@ public class HelpdeskServlet extends ControlledPwmServlet
             final PwmRequest pwmRequest,
             final HelpdeskProfile helpdeskProfile,
             final HelpdeskSearchRequestBean searchRequest
-    ) throws PwmUnrecoverableException, PwmOperationalException
+    )
+            throws PwmUnrecoverableException, PwmOperationalException
     {
 
         final boolean useProxy = helpdeskProfile.readSettingAsBoolean( PwmSetting.HELPDESK_USE_PROXY );
@@ -510,10 +513,10 @@ public class HelpdeskServlet extends ControlledPwmServlet
 
 
             default:
-                JavaHelper.unhandledSwitchStatement( searchMode );
+                PwmUtil.unhandledSwitchStatement( searchMode );
         }
 
-        final UserSearchEngine userSearchEngine = pwmRequest.getPwmDomain().getUserSearchEngine();
+        final UserSearchService userSearchService = pwmRequest.getPwmDomain().getUserSearchEngine();
 
 
         final SearchConfiguration searchConfiguration;
@@ -562,7 +565,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
 
 
                 default:
-                    JavaHelper.unhandledSwitchStatement( searchMode );
+                    PwmUtil.unhandledSwitchStatement( searchMode );
             }
 
             searchConfiguration = builder.build();
@@ -573,19 +576,22 @@ public class HelpdeskServlet extends ControlledPwmServlet
         final boolean sizeExceeded;
         {
             final Locale locale = pwmRequest.getLocale();
-            results = userSearchEngine.performMultiUserSearchFromForm( locale, searchConfiguration, maxResults, searchForm, pwmRequest.getLabel() );
+            results = userSearchService.performMultiUserSearchFromForm( locale, searchConfiguration, maxResults, searchForm, pwmRequest.getLabel() );
             sizeExceeded = results.isSizeExceeded();
         }
 
+        final List<Map<String, Object>> jsonResults = results.resultsAsJsonOutput(
+                userIdentity -> HelpdeskServletUtil.obfuscateUserIdentity( pwmRequest, userIdentity ),
+                pwmRequest.getUserInfoIfLoggedIn() );
+
         return HelpdeskSearchResultsBean.builder()
-                .searchResults( results.resultsAsJsonOutput( pwmRequest.getPwmDomain(), pwmRequest.getUserInfoIfLoggedIn() ) )
+                .searchResults( jsonResults )
                 .sizeExceeded( sizeExceeded )
                 .build();
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "unlockIntruder" )
-    private ProcessStatus restUnlockIntruder(
+    public ProcessStatus restUnlockIntruder(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, ChaiUnavailableException, IOException, ServletException
@@ -598,7 +604,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             pwmRequest.respondWithError( errorInformation, false );
             return ProcessStatus.Halt;
         }
-        final UserIdentity userIdentity = UserIdentity.fromKey( pwmRequest.getLabel(), userKey, pwmRequest.getPwmApplication() );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, userKey );
 
         if ( !helpdeskProfile.readSettingAsBoolean( PwmSetting.HELPDESK_ENABLE_UNLOCK ) )
         {
@@ -655,16 +661,15 @@ public class HelpdeskServlet extends ControlledPwmServlet
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "validateOtpCode" )
-    private ProcessStatus restValidateOtpCodeRequest(
+    public ProcessStatus restValidateOtpCodeRequest(
             final PwmRequest pwmRequest
     )
             throws IOException, PwmUnrecoverableException, ServletException, ChaiUnavailableException
     {
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
 
-        final HelpdeskVerificationRequestBean helpdeskVerificationRequestBean = JsonUtil.deserialize(
+        final HelpdeskVerificationRequestBean helpdeskVerificationRequestBean = JsonFactory.get().deserialize(
                 pwmRequest.readRequestBodyAsString(),
                 HelpdeskVerificationRequestBean.class
         );
@@ -675,7 +680,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             pwmRequest.respondWithError( errorInformation, false );
             return ProcessStatus.Halt;
         }
-        final UserIdentity userIdentity = UserIdentity.fromKey( pwmRequest.getLabel(), userKey, pwmRequest.getPwmApplication() );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, userKey );
 
         if ( !helpdeskProfile.readOptionalVerificationMethods().contains( IdentityVerificationMethod.OTP ) )
         {
@@ -741,9 +746,8 @@ public class HelpdeskServlet extends ControlledPwmServlet
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "sendVerificationToken" )
-    private ProcessStatus restSendVerificationTokenRequest(
+    public ProcessStatus restSendVerificationTokenRequest(
             final PwmRequest pwmRequest
     )
             throws IOException, PwmUnrecoverableException, ChaiUnavailableException
@@ -754,10 +758,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
         final DomainConfig config = pwmRequest.getDomainConfig();
         final Map<String, String> bodyParams = pwmRequest.readBodyAsJsonStringMap();
 
-        final UserIdentity targetUserIdentity = UserIdentity.fromKey(
-                pwmRequest.getLabel(),
-                bodyParams.get( PwmConstants.PARAM_USERKEY ),
-                pwmRequest.getPwmApplication() );
+        final UserIdentity targetUserIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, bodyParams.get( PwmConstants.PARAM_USERKEY ) );
         final UserInfo targetUserInfo = HelpdeskServletUtil.getTargetUserInfo( pwmRequest, helpdeskProfile, targetUserIdentity );
 
         final String requestedTokenID = bodyParams.get( "id" );
@@ -834,7 +835,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
         final DomainSecureService domainSecureService = pwmRequest.getPwmDomain().getSecureService();
         helpdeskVerificationRequestBean.setTokenData( domainSecureService.encryptObjectToString( tokenData ) );
 
-        final RestResultBean restResultBean = RestResultBean.withData( helpdeskVerificationRequestBean );
+        final RestResultBean restResultBean = RestResultBean.withData( helpdeskVerificationRequestBean, HelpdeskVerificationRequestBean.class );
         pwmRequest.outputJsonResult( restResultBean );
         LOGGER.debug( pwmRequest, () -> "helpdesk operator "
                 + pwmRequest.getUserInfoIfLoggedIn().toDisplayString()
@@ -846,17 +847,14 @@ public class HelpdeskServlet extends ControlledPwmServlet
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "verifyVerificationToken" )
-    private ProcessStatus restVerifyVerificationTokenRequest(
+    public ProcessStatus restVerifyVerificationTokenRequest(
             final PwmRequest pwmRequest
     )
             throws IOException, PwmUnrecoverableException, ServletException
     {
-        final HelpdeskVerificationRequestBean helpdeskVerificationRequestBean = JsonUtil.deserialize(
-                pwmRequest.readRequestBodyAsString(),
-                HelpdeskVerificationRequestBean.class
-        );
+        final HelpdeskVerificationRequestBean helpdeskVerificationRequestBean =
+                pwmRequest.readBodyAsJsonObject( HelpdeskVerificationRequestBean.class );
         final String token = helpdeskVerificationRequestBean.getCode();
 
         final DomainSecureService domainSecureService = pwmRequest.getPwmDomain().getSecureService();
@@ -865,10 +863,8 @@ public class HelpdeskServlet extends ControlledPwmServlet
                 HelpdeskVerificationRequestBean.TokenData.class
         );
 
-        final UserIdentity userIdentity = UserIdentity.fromKey(
-                pwmRequest.getLabel(),
-                helpdeskVerificationRequestBean.getUserKey(),
-                pwmRequest.getPwmApplication() );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity(
+                pwmRequest, helpdeskVerificationRequestBean.getUserKey() );
 
         if ( tokenData == null || tokenData.getIssueDate() == null || tokenData.getToken() == null || tokenData.getToken().isEmpty() )
         {
@@ -925,9 +921,8 @@ public class HelpdeskServlet extends ControlledPwmServlet
         return outputVerificationResponseBean( pwmRequest, passed, verificationStateBean );
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "clearOtpSecret" )
-    private ProcessStatus restClearOtpSecret(
+    public ProcessStatus restClearOtpSecret(
             final PwmRequest pwmRequest
     )
             throws ServletException, IOException, PwmUnrecoverableException, ChaiUnavailableException
@@ -982,10 +977,8 @@ public class HelpdeskServlet extends ControlledPwmServlet
         return ProcessStatus.Halt;
     }
 
-
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "checkVerification" )
-    private ProcessStatus restCheckVerification( final PwmRequest pwmRequest )
+    public ProcessStatus restCheckVerification( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException, ServletException
     {
 
@@ -1002,16 +995,15 @@ public class HelpdeskServlet extends ControlledPwmServlet
         final HashMap<String, Object> results = new HashMap<>();
         results.put( "passed", passed );
         results.put( "verificationOptions", optionsBean );
-        final RestResultBean restResultBean = RestResultBean.withData( results );
+        final RestResultBean restResultBean = RestResultBean.withData( results, Map.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "showVerifications" )
-    private ProcessStatus restShowVerifications( final PwmRequest pwmRequest )
-            throws IOException, PwmUnrecoverableException, ServletException, ChaiUnavailableException
+    public ProcessStatus restShowVerifications( final PwmRequest pwmRequest )
+            throws IOException, PwmUnrecoverableException
     {
         final Map<String, String> bodyMap = pwmRequest.readBodyAsJsonStringMap( PwmHttpRequestWrapper.Flag.BypassValidation );
         final String rawVerificationStr = bodyMap.get( HelpdeskVerificationStateBean.PARAMETER_VERIFICATION_STATE_KEY );
@@ -1019,33 +1011,30 @@ public class HelpdeskServlet extends ControlledPwmServlet
         final HashMap<String, Object> results = new HashMap<>();
         try
         {
-            results.put( "records", state.asViewableValidationRecords( pwmRequest.getPwmDomain(), pwmRequest.getLocale() ) );
+            results.put( "records", state.asViewableValidationRecords( pwmRequest.getPwmRequestContext() ) );
         }
         catch ( final ChaiOperationException e )
         {
             throw PwmUnrecoverableException.fromChaiException( e );
         }
-        final RestResultBean restResultBean = RestResultBean.withData( results );
+        final RestResultBean restResultBean = RestResultBean.withData( results, Map.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
-    @SuppressWarnings( "UnusedMethod" )
     @ActionHandler( action = "validateAttributes" )
-    private ProcessStatus restValidateAttributes( final PwmRequest pwmRequest )
+    public ProcessStatus restValidateAttributes( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException, ServletException
     {
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
         final String bodyString = pwmRequest.readRequestBodyAsString();
-        final HelpdeskVerificationRequestBean helpdeskVerificationRequestBean = JsonUtil.deserialize(
+        final HelpdeskVerificationRequestBean helpdeskVerificationRequestBean = JsonFactory.get().deserialize(
                 bodyString,
                 HelpdeskVerificationRequestBean.class
         );
 
-        final UserIdentity userIdentity = UserIdentity.fromKey(
-                pwmRequest.getLabel(),
-                helpdeskVerificationRequestBean.getUserKey(),
-                pwmRequest.getPwmApplication() );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest,
+                helpdeskVerificationRequestBean.getUserKey() );
 
         boolean passed = false;
         {
@@ -1059,7 +1048,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
                 throw new PwmUnrecoverableException( errorInformation );
             }
 
-            final Map<String, String> bodyMap = JsonUtil.deserializeStringMap( bodyString );
+            final Map<String, String> bodyMap = JsonFactory.get().deserializeStringMap( bodyString );
             final ChaiUser chaiUser = HelpdeskServletUtil.getChaiUser( pwmRequest, helpdeskProfile, userIdentity );
 
             int successCount = 0;
@@ -1130,19 +1119,19 @@ public class HelpdeskServlet extends ControlledPwmServlet
     {
         // add a delay to prevent continuous checks
         final long delayMs = JavaHelper.silentParseLong( pwmRequest.getDomainConfig().readAppProperty( AppProperty.HELPDESK_VERIFICATION_INVALID_DELAY_MS ), 500 );
-        TimeDuration.of( delayMs, TimeDuration.Unit.MILLISECONDS ).jitterPause( pwmRequest.getPwmDomain().getSecureService(), 0.3f );
+        PwmTimeUtil.jitterPause( TimeDuration.of( delayMs, TimeDuration.Unit.MILLISECONDS ), pwmRequest.getPwmDomain().getSecureService(), 0.3f );
 
         final HelpdeskVerificationResponseBean responseBean = new HelpdeskVerificationResponseBean(
                 passed,
                 verificationStateBean.toClientString( pwmRequest.getPwmDomain() )
         );
-        final RestResultBean restResultBean = RestResultBean.withData( responseBean );
+        final RestResultBean restResultBean = RestResultBean.withData( responseBean, HelpdeskVerificationResponseBean.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "clearResponses" )
-    private ProcessStatus restClearResponsesHandler( final PwmRequest pwmRequest )
+    public ProcessStatus restClearResponsesHandler( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException, ServletException, ChaiUnavailableException, PwmOperationalException
     {
         final UserIdentity userIdentity;
@@ -1165,9 +1154,9 @@ public class HelpdeskServlet extends ControlledPwmServlet
             if ( !buttonEnabled && ( mode == HelpdeskClearResponseMode.no ) )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_SECURITY_VIOLATION, "setting "
-                        + PwmSetting.HELPDESK_CLEAR_RESPONSES_BUTTON.toMenuLocationDebug( helpdeskProfile.getIdentifier(), pwmRequest.getLocale() )
+                        + PwmSetting.HELPDESK_CLEAR_RESPONSES_BUTTON.toMenuLocationDebug( helpdeskProfile.getId(), pwmRequest.getLocale() )
                         + " must be enabled or setting "
-                        + PwmSetting.HELPDESK_CLEAR_RESPONSES.toMenuLocationDebug( helpdeskProfile.getIdentifier(), pwmRequest.getLocale() )
+                        + PwmSetting.HELPDESK_CLEAR_RESPONSES.toMenuLocationDebug( helpdeskProfile.getId(), pwmRequest.getLocale() )
                         + "must be set to yes or ask" ) );
             }
         }
@@ -1206,15 +1195,11 @@ public class HelpdeskServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "checkPassword" )
-    private ProcessStatus processCheckPasswordAction( final PwmRequest pwmRequest ) throws IOException, PwmUnrecoverableException, ChaiUnavailableException
+    public ProcessStatus processCheckPasswordAction( final PwmRequest pwmRequest ) throws IOException, PwmUnrecoverableException, ChaiUnavailableException
     {
-        final RestCheckPasswordServer.JsonInput jsonInput = JsonUtil.deserialize(
-                pwmRequest.readRequestBodyAsString(),
-                RestCheckPasswordServer.JsonInput.class
-        );
+        final RestCheckPasswordServer.JsonInput jsonInput = pwmRequest.readBodyAsJsonObject( RestCheckPasswordServer.JsonInput.class );
 
-        final UserIdentity userIdentity = UserIdentity.fromKey(
-                pwmRequest.getLabel(), jsonInput.getUsername(), pwmRequest.getPwmApplication() );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, jsonInput.getUsername() );
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
 
         HelpdeskServletUtil.checkIfUserIdentityViewable( pwmRequest, helpdeskProfile, userIdentity );
@@ -1233,7 +1218,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             if ( mode == HelpdeskUIMode.none )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_SECURITY_VIOLATION, "setting "
-                        + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getIdentifier(), pwmRequest.getLocale() )
+                        + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getId(), pwmRequest.getLocale() )
                         + " must not be set to none" ) );
             }
         }
@@ -1249,23 +1234,21 @@ public class HelpdeskServlet extends ControlledPwmServlet
 
         final RestCheckPasswordServer.JsonOutput jsonResponse = RestCheckPasswordServer.JsonOutput.fromPasswordCheckInfo( passwordCheckInfo );
 
-        final RestResultBean restResultBean = RestResultBean.withData( jsonResponse );
+        final RestResultBean restResultBean = RestResultBean.withData( jsonResponse, RestCheckPasswordServer.JsonOutput.class );
         pwmRequest.outputJsonResult( restResultBean );
 
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "setPassword" )
-    private ProcessStatus processSetPasswordAction( final PwmRequest pwmRequest ) throws IOException, PwmUnrecoverableException, ChaiUnavailableException
+    public ProcessStatus processSetPasswordAction( final PwmRequest pwmRequest ) throws IOException, PwmUnrecoverableException, ChaiUnavailableException
     {
         final HelpdeskProfile helpdeskProfile = pwmRequest.getHelpdeskProfile( );
 
-        final RestSetPasswordServer.JsonInputData jsonInput = JsonUtil.deserialize(
-                pwmRequest.readRequestBodyAsString(),
-                RestSetPasswordServer.JsonInputData.class
-        );
+        final RestSetPasswordServer.JsonInputData jsonInput =
+                pwmRequest.readBodyAsJsonObject( RestSetPasswordServer.JsonInputData.class );
 
-        final UserIdentity userIdentity = UserIdentity.fromKey( pwmRequest.getLabel(), jsonInput.getUsername(), pwmRequest.getPwmApplication() );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, jsonInput.getUsername() );
         final ChaiUser chaiUser = HelpdeskServletUtil.getChaiUser( pwmRequest, helpdeskProfile, userIdentity );
         final UserInfo userInfo = UserInfoFactory.newUserInfo(
                 pwmRequest.getPwmApplication(),
@@ -1281,7 +1264,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
         if ( mode == HelpdeskUIMode.none )
         {
             throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_SECURITY_VIOLATION, "setting "
-                    + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getIdentifier(), pwmRequest.getLocale() )
+                    + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getId(), pwmRequest.getLocale() )
                     + " must not be set to none" ) );
         }
 
@@ -1292,7 +1275,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             if ( mode != HelpdeskUIMode.random )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_SECURITY_VIOLATION, "setting "
-                        + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getIdentifier(), pwmRequest.getLocale() )
+                        + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getId(), pwmRequest.getLocale() )
                         + " is set to " + mode + " and no password is included in request" ) );
             }
             final PwmPasswordPolicy passwordPolicy = PasswordUtility.readPasswordPolicyForUser(
@@ -1311,7 +1294,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             if ( mode == HelpdeskUIMode.random )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_SECURITY_VIOLATION, "setting "
-                        + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getIdentifier(), pwmRequest.getLocale() )
+                        + PwmSetting.HELPDESK_SET_PASSWORD_MODE.toMenuLocationDebug( helpdeskProfile.getId(), pwmRequest.getLocale() )
                         + " is set to autogen yet a password is included in request" ) );
             }
 
@@ -1341,10 +1324,10 @@ public class HelpdeskServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "randomPassword" )
-    private ProcessStatus processRandomPasswordAction( final PwmRequest pwmRequest ) throws IOException, PwmUnrecoverableException, ChaiUnavailableException
+    public ProcessStatus processRandomPasswordAction( final PwmRequest pwmRequest ) throws IOException, PwmUnrecoverableException, ChaiUnavailableException
     {
-        final RestRandomPasswordServer.JsonInput input = JsonUtil.deserialize( pwmRequest.readRequestBodyAsString(), RestRandomPasswordServer.JsonInput.class );
-        final UserIdentity userIdentity = UserIdentity.fromKey( pwmRequest.getLabel(), input.getUsername(), pwmRequest.getPwmApplication() );
+        final RestRandomPasswordServer.JsonInput input = pwmRequest.readBodyAsJsonObject( RestRandomPasswordServer.JsonInput.class );
+        final UserIdentity userIdentity = HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, input.getUsername() );
 
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
 
@@ -1359,24 +1342,19 @@ public class HelpdeskServlet extends ControlledPwmServlet
                 chaiUser.getChaiProvider()
         );
 
-        final RandomPasswordGenerator.RandomGeneratorConfig.RandomGeneratorConfigBuilder randomConfigBuilder
-                = RandomPasswordGenerator.RandomGeneratorConfig.builder();
-
-        randomConfigBuilder.passwordPolicy( userInfo.getPasswordPolicy() );
-
-        final RandomPasswordGenerator.RandomGeneratorConfig randomConfig = randomConfigBuilder.build();
+        final RandomGeneratorConfig randomConfig = RandomGeneratorConfig.make( pwmRequest.getPwmDomain(), userInfo.getPasswordPolicy() );
         final PasswordData randomPassword = RandomPasswordGenerator.createRandomPassword( pwmRequest.getLabel(), randomConfig, pwmRequest.getPwmDomain() );
         final RestRandomPasswordServer.JsonOutput jsonOutput = new RestRandomPasswordServer.JsonOutput();
         jsonOutput.setPassword( randomPassword.getStringValue() );
 
-        final RestResultBean restResultBean = RestResultBean.withData( jsonOutput );
+        final RestResultBean restResultBean = RestResultBean.withData( jsonOutput, RestRandomPasswordServer.JsonOutput.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "photo" )
-    private ProcessStatus processUserPhotoImageRequest( final PwmRequest pwmRequest )
-            throws ChaiUnavailableException, PwmUnrecoverableException, IOException, ServletException
+    public ProcessStatus processUserPhotoImageRequest( final PwmRequest pwmRequest )
+            throws PwmUnrecoverableException
     {
         final UserIdentity userIdentity = readUserKeyRequestParameter( pwmRequest );
         final HelpdeskProfile helpdeskProfile = getHelpdeskProfile( pwmRequest );
@@ -1400,7 +1378,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_MISSING_PARAMETER, "userKey parameter is missing" );
             throw new PwmUnrecoverableException( errorInformation );
         }
-        return UserIdentity.fromKey( pwmRequest.getLabel(), userKey, pwmRequest.getPwmApplication() );
+        return HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, userKey );
     }
 
     static PhotoDataReader photoDataReader( final PwmRequest pwmRequest, final HelpdeskProfile helpdeskProfile, final UserIdentity userIdentity )

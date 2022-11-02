@@ -186,19 +186,20 @@ PWM_MAIN.initPage = function() {
         });
     }
 
-    for (var i = 0; i < PWM_GLOBAL['startupFunctions'].length; i++) {
-        try {
-            PWM_GLOBAL['startupFunctions'][i]();
-        } catch(e) {
-            console.error('error executing startup function: ' + e);
-        }
-    }
+    PWM_MAIN.JSLibrary.onPageLoad(function(){
+        PWM_MAIN.JSLibrary.forEachInArray(PWM_GLOBAL['startupFunctions'],function(startupFunction){
+            try {
+                startupFunction();
+            } catch(e) {
+                console.error('error executing startup function: ' + e);
+            }
+        })
+    });
 
     PWM_MAIN.TimestampHandler.initAllElements();
 
     ShowHidePasswordHandler.initAllForms();
-    var loadTime = window.performance.timing.domContentLoadedEventEnd-window.performance.timing.navigationStart;
-    PWM_MAIN.log('initPage completed [load time=' + loadTime + ']');
+    PWM_MAIN.log('initPage completed');
 };
 
 PWM_MAIN.initDisplayTabPreferences = function() {
@@ -717,14 +718,20 @@ PWM_MAIN.showWaitDialog = function(options) {
 
     options = options || {};
     options['title'] = options['title'] || '';
+    var progressBar = options['progressBar'];
 
     var waitOverlayDiv = document.createElement('div');
     waitOverlayDiv.setAttribute('id','wait-overlay');
     document.body.appendChild(waitOverlayDiv);
 
+    var htmlContent = '<span>' + options['title'] + '</span>';
+    htmlContent += progressBar
+        ? '<progress value="-1" id="wait-progress"/>'
+        : '<div id="wait-overlay-inner"></div>';
+
     var waitOverlayMessage = document.createElement('div');
     waitOverlayMessage.setAttribute('id','wait-overlay-message');
-    waitOverlayMessage.innerHTML = '<span>' + options['title'] + '</span><div id="wait-overlay-inner"></div>';
+    waitOverlayMessage.innerHTML = htmlContent;
     document.body.appendChild(waitOverlayMessage);
 
     if ('loadFunction' in options) {
@@ -1090,23 +1097,6 @@ PWM_MAIN.flashDomElement = function(flashColor,elementName,durationMS) {
             //      PWM_MAIN.removeCssClass(element, 'background-alert-flash');
         },5000)
     }
-    /*
-
-    if (!PWM_MAIN.getObject(elementName)) {
-        PWM_MAIN.log('cant flash non-existing element id ' + elementName);
-        return;
-    }
-    PWM_MAIN.log('will flash element id ' + elementName);
-    require(["dojo","dojo/window","dojo/domReady!"],function(dojo) {
-        var originalBGColor = PWM_MAIN.getRenderedStyle(elementName,'background-color');
-        PWM_MAIN.getObject(elementName).style.backgroundColor = flashColor;
-        dojo.animateProperty({
-            node:elementName,
-            duration: durationMS,
-            properties: { backgroundColor: originalBGColor}
-        }).play();
-    });
-     */
 };
 
 PWM_MAIN.getRenderedStyle = function(el,styleProp) {
@@ -1194,8 +1184,8 @@ PWM_MAIN.pwmFormValidator = function(validationProps, reentrant) {
 
     // check if data is in cache, if it is just process it.
     var formData = readDataFunction();
-    var formKey = "";
-    for (var key in formData) {formKey += formData[key] + "-";}
+    var formDataString = JSON.stringify(formData) ;
+    var formKey = formDataString;
 
     {
         var cachedResult = PWM_VAR['validationCache'][formKey];
@@ -1238,8 +1228,6 @@ PWM_MAIN.pwmFormValidator = function(validationProps, reentrant) {
             }
         }, 5);
     }
-
-    var formDataString = JSON.stringify(formData) ;
 
     if (CONSOLE_DEBUG) PWM_MAIN.log('FormValidator: sending form data to server... ' + formDataString);
     var loadFunction = function(data) {
@@ -1307,6 +1295,15 @@ PWM_MAIN.JSLibrary.removeFromArray = function(array,element) {
         }
     }
 };
+
+PWM_MAIN.JSLibrary.getParameterByName = function(name, url = window.location.href) {
+    name = name.replace(/[\[\]]/g, '\\$&');
+    var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+        results = regex.exec(url);
+    if (!results) return null;
+    if (!results[2]) return '';
+    return decodeURIComponent(results[2].replace(/\+/g, ' '));
+}
 
 PWM_MAIN.JSLibrary.readValueOfSelectElement = function(nodeID) {
     var element = PWM_MAIN.getObject(nodeID);
@@ -1383,6 +1380,16 @@ PWM_MAIN.JSLibrary.removeElementFromDom = function(elementID) {
     var element = PWM_MAIN.getObject(elementID);
     if (element) {
         element.parentNode.removeChild(element);
+    }
+};
+
+PWM_MAIN.JSLibrary.onPageLoad = function(callback) {
+    if (document.readyState === "complete") {
+        callback();
+    } else {
+        window.addEventListener("load",function(event) {
+            callback();
+        }, false);
     }
 };
 
@@ -1512,7 +1519,7 @@ ShowHidePasswordHandler.toggle = function(nodeName) {
 
 ShowHidePasswordHandler.hide = function(nodeName) {
     ShowHidePasswordHandler.state[nodeName] = true;
-    ShowHidePasswordHandler.changeInputTypeField(PWM_MAIN.getObject(nodeName),'password');
+    PWM_MAIN.getObject(nodeName).setAttribute('type','password');
     ShowHidePasswordHandler.setupTooltip(nodeName);
     ShowHidePasswordHandler.renderIcon(nodeName);
     var node = PWM_MAIN.getObject(nodeName);
@@ -1521,22 +1528,20 @@ ShowHidePasswordHandler.hide = function(nodeName) {
 
 ShowHidePasswordHandler.show = function(nodeName) {
     ShowHidePasswordHandler.state[nodeName] = false;
-    ShowHidePasswordHandler.changeInputTypeField(PWM_MAIN.getObject(nodeName),'text');
+    PWM_MAIN.getObject(nodeName).setAttribute('type','text');
     ShowHidePasswordHandler.setupTooltip(nodeName);
     ShowHidePasswordHandler.renderIcon(nodeName);
 
     var node = PWM_MAIN.getObject(nodeName);
     node.focus();
-    require(["dojo/dom-construct", "dojo/dom-attr"], function(domConstruct, attr) {
-        var defaultType = attr.get(nodeName, "data-originalType");
-        if (defaultType === 'password') {
-            setTimeout(function () {
-                if (!ShowHidePasswordHandler.state[nodeName]) {
-                    ShowHidePasswordHandler.toggle(nodeName);
-                }
-            }, ShowHidePasswordHandler.toggleRevertTimeout);
-        }
-    });
+    var defaultType = node.getAttribute('data-originalType');
+    if (defaultType === 'password') {
+        setTimeout(function () {
+            if (!ShowHidePasswordHandler.state[nodeName]) {
+                ShowHidePasswordHandler.toggle(nodeName);
+            }
+        }, ShowHidePasswordHandler.toggleRevertTimeout);
+    }
 };
 
 ShowHidePasswordHandler.addInputEvents = function(nodeName) {
@@ -1546,31 +1551,6 @@ ShowHidePasswordHandler.addInputEvents = function(nodeName) {
         ShowHidePasswordHandler.setupTooltip(nodeName);
     });
 
-};
-
-ShowHidePasswordHandler.changeInputTypeField = function(object, type) {
-    require(["dojo","dojo/_base/lang", "dojo/dom", "dojo/dom-attr"], function(dojo, lang, dom, attr){
-        var newObject = null;
-        if(dojo.isIE <= 8){ // IE doesn't support simply changing the type of object
-            newObject = document.createElement(object.nodeName);
-            newObject.type = type;
-            if (object.size) newObject.size = object.size;
-            if (object.value) newObject.value = object.value;
-            if (object.name) newObject.name = object.name;
-            if (object.id) newObject.id = object.id;
-            if (object.className) newObject.className = object.className;
-            if (object.disabled) newObject.disabled = object.disabled;
-            if (object.readonly) newObject.readonly = object.readonly;
-            if (object.data) newObject.data = object.data;
-        } else {
-            newObject = object;
-            attr.set(newObject, "type", type);
-        }
-
-        object.parentNode.replaceChild(newObject, object);
-        ShowHidePasswordHandler.addInputEvents(object.id);
-        return newObject;
-    });
 };
 
 ShowHidePasswordHandler.setupTooltip = function(nodeName) {
@@ -1740,24 +1720,22 @@ PWM_MAIN.TimestampHandler.initElement = function(element) {
         return;
     }
 
-    require(["dojo"], function(dojo) {
-        var innerText = dojo.attr(element, 'innerHTML');
-        innerText = innerText.trim(innerText);
-        PWM_MAIN.TimestampHandler.testIfStringIsTimestamp(innerText, function () {
-            element.setAttribute('data-timestamp-original', innerText);
-            PWM_MAIN.addEventHandler(element, 'click', function(){
-                var LocalizedState = !PWM_MAIN.Preferences.readSessionStorage(PWM_MAIN.TimestampHandler.PreferencesKey,true);
-                PWM_MAIN.Preferences.writeSessionStorage(PWM_MAIN.TimestampHandler.PreferencesKey, LocalizedState);
-                PWM_MAIN.TimestampHandler.updateAllElements();
-            });
-            if (!dojo.hasClass(element,"timestamp")) {
-                dojo.addClass(element,"timestamp");
-            }
-
-            element.setAttribute('data-timestamp-init', 'true');
-            PWM_MAIN.TimestampHandler.ElementList.push(element);
-            PWM_MAIN.TimestampHandler.updateElement(element);
+    var innerText = element.innerHTML;
+    innerText = innerText.trim(innerText);
+    PWM_MAIN.TimestampHandler.testIfStringIsTimestamp(innerText, function () {
+        element.setAttribute('data-timestamp-original', innerText);
+        PWM_MAIN.addEventHandler(element, 'click', function(){
+            var LocalizedState = !PWM_MAIN.Preferences.readSessionStorage(PWM_MAIN.TimestampHandler.PreferencesKey,true);
+            PWM_MAIN.Preferences.writeSessionStorage(PWM_MAIN.TimestampHandler.PreferencesKey, LocalizedState);
+            PWM_MAIN.TimestampHandler.updateAllElements();
         });
+        if (!PWM_MAIN.hasCssClass(element,"timestamp")) {
+            PWM_MAIN.addCssClass(element,"timestamp");
+        }
+
+        element.setAttribute('data-timestamp-init', 'true');
+        PWM_MAIN.TimestampHandler.ElementList.push(element);
+        PWM_MAIN.TimestampHandler.updateElement(element);
     });
 };
 
@@ -1772,18 +1750,15 @@ PWM_MAIN.TimestampHandler.updateAllElements = function() {
 };
 
 PWM_MAIN.TimestampHandler.updateElement = function(element) {
-    require(["dojo"], function(dojo) {
-        var localized = PWM_MAIN.Preferences.readSessionStorage(PWM_MAIN.TimestampHandler.PreferencesKey,true);
-        if (localized) {
-            var isoDateStr = element.getAttribute('data-timestamp-original');
-            var date = new Date(Date.parse(isoDateStr));
-            var localizedStr = PWM_MAIN.TimestampHandler.formatDate(date);
-
-            dojo.attr(element,'innerHTML',localizedStr);
-        } else {
-            dojo.attr(element,'innerHTML',element.getAttribute('data-timestamp-original'));
-        }
-    })
+    var localized = PWM_MAIN.Preferences.readSessionStorage(PWM_MAIN.TimestampHandler.PreferencesKey,true);
+    if (localized) {
+        var isoDateStr = element.getAttribute('data-timestamp-original');
+        var date = new Date(Date.parse(isoDateStr));
+        var localizedStr = PWM_MAIN.TimestampHandler.formatDate(date);
+        element.innerHTML = localizedStr;
+    } else {
+        element.innerHTML = element.getAttribute('data-timestamp-original');
+    }
 };
 
 PWM_MAIN.TimestampHandler.formatDate = function(dateObj) {
@@ -1860,7 +1835,11 @@ PWM_MAIN.ajaxRequest = function(url,loadFunction,options) {
             if ( typeof response === "string" && handleAs === "json") {
                 response = JSON.parse( response );
             }
-            loadFunction(response);
+            if (xhr.status===200) {
+                loadFunction(response);
+            } else {
+                errorFunction(response)
+            }
         }
     };
     xhr.onerror = errorFunction;

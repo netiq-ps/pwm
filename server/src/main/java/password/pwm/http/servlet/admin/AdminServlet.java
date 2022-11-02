@@ -33,7 +33,6 @@ import password.pwm.config.PwmSetting;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmException;
-import password.pwm.error.PwmOperationalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.HttpContentType;
 import password.pwm.http.HttpMethod;
@@ -49,7 +48,7 @@ import password.pwm.http.servlet.AbstractPwmServlet;
 import password.pwm.http.servlet.ControlledPwmServlet;
 import password.pwm.http.servlet.PwmServletDefinition;
 import password.pwm.i18n.Message;
-import password.pwm.ldap.search.UserSearchEngine;
+import password.pwm.ldap.search.UserSearchService;
 import password.pwm.svc.event.AuditEventType;
 import password.pwm.svc.event.AuditRecord;
 import password.pwm.svc.intruder.IntruderRecordType;
@@ -63,9 +62,12 @@ import password.pwm.svc.stats.StatisticsService;
 import password.pwm.util.i18n.LocaleHelper;
 import password.pwm.util.java.ClosableIterator;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.java.PwmTimeUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
+import password.pwm.util.json.JsonProvider;
 import password.pwm.util.logging.LocalDBLogger;
 import password.pwm.util.logging.LocalDBSearchQuery;
 import password.pwm.util.logging.LocalDBSearchResults;
@@ -109,6 +111,12 @@ import java.util.zip.ZipOutputStream;
 public class AdminServlet extends ControlledPwmServlet
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( AdminServlet.class );
+
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
 
     public enum AdminAction implements AbstractPwmServlet.ProcessAction
     {
@@ -169,7 +177,7 @@ public class AdminServlet extends ControlledPwmServlet
             return ProcessStatus.Halt;
         }
 
-        if ( !pwmRequest.getPwmSession().getSessionManager().checkPermission( pwmRequest.getPwmDomain(), Permission.PWMADMIN ) )
+        if ( !pwmRequest.checkPermission( Permission.PWMADMIN ) )
         {
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_UNAUTHORIZED );
             pwmRequest.respondWithError( errorInformation );
@@ -179,7 +187,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "viewLogWindow" )
-    private ProcessStatus processViewLogWindow(
+    public ProcessStatus processViewLogWindow(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, IOException, ServletException
@@ -189,7 +197,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "downloadAuditLogCsv" )
-    private ProcessStatus downloadAuditLogCsv(
+    public ProcessStatus downloadAuditLogCsv(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, IOException, ChaiUnavailableException, ServletException
@@ -219,7 +227,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "downloadUserReportCsv" )
-    private ProcessStatus downloadUserReportCsv(
+    public ProcessStatus downloadUserReportCsv(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, IOException, ChaiUnavailableException, ServletException
@@ -250,7 +258,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "downloadUserSummaryCsv" )
-    private ProcessStatus downloadUserSummaryCsv(
+    public ProcessStatus downloadUserSummaryCsv(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, IOException, ChaiUnavailableException, ServletException
@@ -281,7 +289,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "downloadStatisticsLogCsv" )
-    private ProcessStatus downloadStatisticsLogCsv( final PwmRequest pwmRequest )
+    public ProcessStatus downloadStatisticsLogCsv( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException, ChaiUnavailableException, ServletException
     {
         final PwmDomain pwmDomain = pwmRequest.getPwmDomain();
@@ -310,7 +318,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "downloadSessionsCsv" )
-    private ProcessStatus downloadSessionsCsv( final PwmRequest pwmRequest )
+    public ProcessStatus downloadSessionsCsv( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException, ChaiUnavailableException, ServletException
     {
         final PwmDomain pwmDomain = pwmRequest.getPwmDomain();
@@ -338,12 +346,12 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "clearIntruderTable" )
-    private ProcessStatus processClearIntruderTable(
+    public ProcessStatus processClearIntruderTable(
             final PwmRequest pwmRequest
     )
             throws ChaiUnavailableException, PwmUnrecoverableException, IOException, ServletException
     {
-        if ( !pwmRequest.getPwmSession().getSessionManager().checkPermission( pwmRequest.getPwmDomain(), Permission.PWMADMIN ) )
+        if ( !pwmRequest.checkPermission( Permission.PWMADMIN ) )
         {
             LOGGER.info( pwmRequest, () -> "unable to execute clear intruder records" );
             return ProcessStatus.Halt;
@@ -357,7 +365,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "reportCommand" )
-    private ProcessStatus processReportCommand( final PwmRequest pwmRequest ) throws PwmUnrecoverableException, IOException
+    public ProcessStatus processReportCommand( final PwmRequest pwmRequest ) throws PwmUnrecoverableException, IOException
     {
         final ReportService.ReportCommand reportCommand = JavaHelper.readEnumFromString(
                 ReportService.ReportCommand.class,
@@ -374,20 +382,20 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "reportStatus" )
-    private ProcessStatus processReportStatus( final PwmRequest pwmRequest )
+    public ProcessStatus processReportStatus( final PwmRequest pwmRequest )
             throws IOException
     {
-        final ReportStatusBean returnMap = ReportStatusBean.makeReportStatusData(
+        final ReportStatusBean reportStatusBean = ReportStatusBean.makeReportStatusData(
                 pwmRequest.getPwmApplication().getReportService(),
                 pwmRequest.getPwmSession().getSessionStateBean().getLocale()
         );
-        final RestResultBean restResultBean = RestResultBean.withData( returnMap );
+        final RestResultBean restResultBean = RestResultBean.withData( reportStatusBean, ReportStatusBean.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "reportSummary" )
-    private ProcessStatus processReportSummary( final PwmRequest pwmRequest )
+    public ProcessStatus processReportSummary( final PwmRequest pwmRequest )
             throws IOException
     {
         final LinkedHashMap<String, Object> returnMap = new LinkedHashMap<>();
@@ -397,7 +405,7 @@ public class AdminServlet extends ControlledPwmServlet
                 pwmRequest.getPwmSession().getSessionStateBean().getLocale()
         ) );
 
-        final RestResultBean restResultBean = RestResultBean.withData( returnMap );
+        final RestResultBean restResultBean = RestResultBean.withData( returnMap, Map.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
@@ -423,16 +431,16 @@ public class AdminServlet extends ControlledPwmServlet
             }
         }
 
-        final HashMap<String, Object> returnData = new HashMap<>();
+        final Map<String, Object> returnData = new HashMap<>();
         returnData.put( "users", reportData );
 
-        final RestResultBean restResultBean = RestResultBean.withData( returnData );
+        final RestResultBean restResultBean = RestResultBean.withData( returnData, Map.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "downloadUserDebug" )
-    private ProcessStatus processDownloadUserDebug( final PwmRequest pwmRequest )
+    public ProcessStatus processDownloadUserDebug( final PwmRequest pwmRequest )
 
             throws ChaiUnavailableException, PwmUnrecoverableException, IOException, ServletException
     {
@@ -451,7 +459,7 @@ public class AdminServlet extends ControlledPwmServlet
                     pwmRequest.getLabel(),
                     userIdentity
             );
-            final String output = JsonUtil.serialize( userDebugData, JsonUtil.Flag.PrettyPrint );
+            final String output = JsonFactory.get().serialize( userDebugData, JsonProvider.Flag.PrettyPrint );
             pwmRequest.getPwmResponse().getOutputStream().write( output.getBytes( PwmConstants.DEFAULT_CHARSET ) );
         }
         else
@@ -463,7 +471,7 @@ public class AdminServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "auditData" )
-    private ProcessStatus restAuditDataHandler( final PwmRequest pwmRequest )
+    public ProcessStatus restAuditDataHandler( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException
     {
         final Instant startTime = Instant.now();
@@ -477,7 +485,7 @@ public class AdminServlet extends ControlledPwmServlet
                 iterator.hasNext()
                         && records.size() < max
                         && TimeDuration.fromCurrent( startTime ).isShorterThan( maxSearchTime )
-                )
+        )
         {
             final AuditRecord loopRecord = iterator.next();
             if ( auditDataType == loopRecord.getType() )
@@ -488,19 +496,19 @@ public class AdminServlet extends ControlledPwmServlet
 
         final HashMap<String, Object> resultData = new HashMap<>( Collections.singletonMap( "records", records ) );
 
-        final RestResultBean restResultBean = RestResultBean.withData( resultData );
+        final RestResultBean restResultBean = RestResultBean.withData( resultData, Map.class );
         LOGGER.debug( pwmRequest, () -> "output " + records.size() + " audit records." );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "sessionData" )
-    private ProcessStatus restSessionDataHandler( final PwmRequest pwmRequest )
+    public ProcessStatus restSessionDataHandler( final PwmRequest pwmRequest )
             throws ChaiUnavailableException, PwmUnrecoverableException, IOException
     {
         final int max = readMaxParameter( pwmRequest, 1000, 10 * 1000 );
 
-        final ArrayList<SessionStateInfoBean> gridData = new ArrayList<>();
+        final List<SessionStateInfoBean> gridData = new ArrayList<>();
         int counter = 0;
         final Iterator<SessionStateInfoBean> infos = pwmRequest.getPwmDomain().getSessionTrackService().getSessionInfoIterator();
         while ( counter < max && infos.hasNext() )
@@ -508,13 +516,13 @@ public class AdminServlet extends ControlledPwmServlet
             gridData.add( infos.next() );
             counter++;
         }
-        final RestResultBean restResultBean = RestResultBean.withData( gridData );
+        final RestResultBean restResultBean = RestResultBean.withData( gridData, List.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "intruderData" )
-    private ProcessStatus restIntruderDataHandler( final PwmRequest pwmRequest )
+    public ProcessStatus restIntruderDataHandler( final PwmRequest pwmRequest )
             throws  PwmUnrecoverableException, IOException
     {
         final int max = readMaxParameter( pwmRequest, 1000, 10 * 1000 );
@@ -534,7 +542,7 @@ public class AdminServlet extends ControlledPwmServlet
             pwmRequest.outputJsonResult( RestResultBean.fromError( errorInfo ) );
         }
 
-        final RestResultBean restResultBean = RestResultBean.withData( returnData );
+        final RestResultBean restResultBean = RestResultBean.withData( returnData, Map.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
@@ -548,27 +556,26 @@ public class AdminServlet extends ControlledPwmServlet
             return;
         }
 
-        final UserSearchEngine userSearchEngine = pwmRequest.getPwmDomain().getUserSearchEngine();
+        final UserSearchService userSearchService = pwmRequest.getPwmDomain().getUserSearchEngine();
         final UserIdentity userIdentity;
         try
         {
-            userIdentity = userSearchEngine.resolveUsername( username, null, null, pwmRequest.getLabel() );
+            userIdentity = userSearchService.resolveUsername( username, null, null, pwmRequest.getLabel() );
             final AdminBean adminBean = pwmRequest.getPwmDomain().getSessionStateService().getBean( pwmRequest, AdminBean.class );
             adminBean.setLastUserDebug( userIdentity );
+
+            final UserDebugDataBean userDebugData = UserDebugDataReader.readUserDebugData(
+                    pwmRequest.getPwmDomain(),
+                    pwmRequest.getLocale(),
+                    pwmRequest.getLabel(),
+                    userIdentity
+            );
+            pwmRequest.setAttribute( PwmRequestAttribute.UserDebugData, userDebugData );
         }
-        catch ( final PwmUnrecoverableException | PwmOperationalException e )
+        catch ( final PwmException e )
         {
             setLastError( pwmRequest, e.getErrorInformation() );
-            return;
         }
-
-        final UserDebugDataBean userDebugData = UserDebugDataReader.readUserDebugData(
-                pwmRequest.getPwmDomain(),
-                pwmRequest.getLocale(),
-                pwmRequest.getLabel(),
-                userIdentity
-        );
-        pwmRequest.setAttribute( PwmRequestAttribute.UserDebugData, userDebugData );
     }
 
     private void processThreadPageView( final PwmRequest pwmRequest ) throws IOException
@@ -686,7 +693,9 @@ public class AdminServlet extends ControlledPwmServlet
             final DisplayElement displayElement = new DisplayElement( String.valueOf( key++ ), DisplayElement.Type.string, "Status",
                     "Password Notification Feature is not enabled.  See setting: "
                             + PwmSetting.PW_EXPY_NOTIFY_ENABLE.toMenuLocationDebug( null, pwmRequest.getLocale() ) );
-            pwmRequest.outputJsonResult( RestResultBean.withData( new PwNotifyStatusBean( Collections.singletonList( displayElement ), false ) ) );
+            pwmRequest.outputJsonResult( RestResultBean.withData(
+                    new PwNotifyStatusBean( Collections.singletonList( displayElement ), false ),
+                    PwNotifyStatusBean.class ) );
             return ProcessStatus.Halt;
         }
 
@@ -720,7 +729,10 @@ public class AdminServlet extends ControlledPwmServlet
             if ( pwNotifyStoredJobState.getLastStart() != null && pwNotifyStoredJobState.getLastCompletion() != null )
             {
                 statusData.add( new DisplayElement( String.valueOf( key++ ), DisplayElement.Type.timestamp,
-                        "Last Job Duration", TimeDuration.between( pwNotifyStoredJobState.getLastStart(), pwNotifyStoredJobState.getLastCompletion() ).asLongString( locale ) ) );
+                        "Last Job Duration", PwmTimeUtil.asLongString(
+                        TimeDuration.between(
+                                pwNotifyStoredJobState.getLastStart(),
+                                pwNotifyStoredJobState.getLastCompletion() ), locale ) ) );
             }
 
             if ( StringUtil.notEmpty( pwNotifyStoredJobState.getServerInstance() ) )
@@ -738,7 +750,7 @@ public class AdminServlet extends ControlledPwmServlet
 
         final boolean startButtonEnabled = !pwNotifyService.isRunning() && canRunOnthisServer;
         final PwNotifyStatusBean pwNotifyStatusBean = new PwNotifyStatusBean( statusData, startButtonEnabled );
-        pwmRequest.outputJsonResult( RestResultBean.withData( pwNotifyStatusBean ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( pwNotifyStatusBean, PwNotifyStatusBean.class ) );
         return ProcessStatus.Halt;
     }
 
@@ -748,7 +760,7 @@ public class AdminServlet extends ControlledPwmServlet
     {
         final PwNotifyService pwNotifyService = pwmRequest.getPwmDomain().getPwNotifyService();
 
-        pwmRequest.outputJsonResult( RestResultBean.withData( pwNotifyService.debugLog() ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( pwNotifyService.debugLog(), String.class ) );
         return ProcessStatus.Halt;
     }
 
@@ -817,7 +829,7 @@ public class AdminServlet extends ControlledPwmServlet
         returnData.put( "display", logDisplayType );
         returnData.put( "size", searchResults.getReturnedEvents() );
         returnData.put( "duration", searchResults.getSearchTime() );
-        pwmRequest.outputJsonResult( RestResultBean.withData( returnData ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( returnData, Map.class ) );
 
         return ProcessStatus.Halt;
     }
@@ -826,6 +838,7 @@ public class AdminServlet extends ControlledPwmServlet
     {
         plain,
         csv,
+        json,
     }
 
     public enum LogDownloadCompression
@@ -883,7 +896,7 @@ public class AdminServlet extends ControlledPwmServlet
             }
             writer = new OutputStreamWriter( compressedStream, PwmConstants.DEFAULT_CHARSET );
         }
-        
+
         switch ( logDownloadType )
         {
             case plain:
@@ -912,8 +925,22 @@ public class AdminServlet extends ControlledPwmServlet
             }
             break;
 
+            case json:
+            {
+                final JsonProvider jsonProvider = JsonFactory.get();
+                pwmRequest.getPwmResponse().markAsDownload(
+                        compressedContentType != null ? compressedContentType : HttpContentType.json,
+                        "debug.json" + compressFileNameSuffix );
+                while ( searchResults.hasNext() )
+                {
+                    writer.write( jsonProvider.serialize( searchResults.next(), PwmLogEvent.class ) );
+                    writer.write( "\n" );
+                }
+            }
+            break;
+
             default:
-                JavaHelper.unhandledSwitchStatement( logDownloadType );
+                PwmUtil.unhandledSwitchStatement( logDownloadType );
 
         }
 
