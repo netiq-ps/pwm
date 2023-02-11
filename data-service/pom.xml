@@ -43,6 +43,7 @@
                 <!-- This plugin will set properties values using dependency information -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <goals>
@@ -70,6 +71,27 @@
                         </manifestEntries>
                     </archive>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>io.leonard.maven.plugins</groupId>
+                <artifactId>jspc-maven-plugin</artifactId>
+                <version>4.1.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <phase>compile</phase>
+                        <configuration>
+                            <compiler>17</compiler>
+                            <trimSpaces>true</trimSpaces>
+                            <compilerVersion>${maven.compiler.source}</compilerVersion>
+                            <keepSources>false</keepSources>
+                            <threads>20</threads>
+                            <mergeFragment>false</mergeFragment>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <artifactId>maven-resources-plugin</artifactId>
@@ -100,7 +122,7 @@
             <plugin>
                 <groupId>com.google.cloud.tools</groupId>
                 <artifactId>jib-maven-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.3.1</version>
                 <executions>
                     <execution>
                         <id>make-docker-image</id>
@@ -111,7 +133,7 @@
                         <configuration>
                             <skip>${skipDocker}</skip>
                             <from>
-                                <image>tomcat:9.0-jdk17-temurin</image>
+                                <image>tomcat:10-jdk17</image>
                             </from>
                             <to>
                                 <image>pwm/pwm-data-service</image>
@@ -173,15 +195,15 @@
 
         <!-- container dependencies -->
         <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>javax.servlet-api</artifactId>
-            <version>4.0.1</version>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>6.0.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>javax.servlet.jsp</groupId>
-            <artifactId>javax.servlet.jsp-api</artifactId>
-            <version>2.3.3</version>
+            <groupId>jakarta.servlet.jsp</groupId>
+            <artifactId>jakarta.servlet.jsp-api</artifactId>
+            <version>3.1.1</version>
             <scope>provided</scope>
         </dependency>
         <!-- / container dependencies -->
@@ -189,7 +211,7 @@
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-csv</artifactId>
-            <version>1.9.0</version>
+            <version>1.10.0</version>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.xodus</groupId>
@@ -199,12 +221,12 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>2.0.2</version>
+            <version>2.0.6</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.4.1</version>
+            <version>1.4.5</version>
         </dependency>
     </dependencies>
 </project>

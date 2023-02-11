@@ -85,6 +85,17 @@ public class PwmLogger
         doLogEvent( level, sessionLabel, message, null, null );
     }
 
+    public void log(
+            final PwmLogLevel level,
+            final SessionLabel sessionLabel,
+            final Supplier<? extends CharSequence> message,
+            final Throwable throwable,
+            final TimeDuration timeDuration
+    )
+    {
+        doLogEvent( level, sessionLabel, message, throwable, timeDuration );
+    }
+
     public void trace( final Supplier<? extends CharSequence> message )
     {
         doLogEvent( PwmLogLevel.TRACE, null, message, null, null );

@@ -21,7 +21,6 @@
 package password.pwm.svc.event;
 
 import org.jrivard.xmlchai.AccessMode;
-import org.jrivard.xmlchai.XmlChai;
 import org.jrivard.xmlchai.XmlDocument;
 import org.jrivard.xmlchai.XmlElement;
 import org.jrivard.xmlchai.XmlFactory;
@@ -51,7 +50,7 @@ public class LdapXmlUserHistoryTest
     public void inputParserTest()
             throws Exception
     {
-        final PwmApplication pwmApplication = TestHelper.makeTestPwmApplication( temporaryFolder.toFile() );
+        final PwmApplication pwmApplication = TestHelper.makeTestPwmApplication( temporaryFolder );
         final PwmDomain pwmDomain = pwmApplication.domains().get( DomainID.DOMAIN_ID_DEFAULT );
         final ResourceBundle bundle = ResourceBundle.getBundle( LdapXmlUserHistoryTest.class.getName() );
         final String xmlValue1 =  bundle.getString( "xmlValue1" );
@@ -95,7 +94,7 @@ public class LdapXmlUserHistoryTest
                 .build() ) );
 
         final String xmlValue = storedHistory.toXml();
-        final XmlFactory xmlFactory = XmlChai.getFactory();
+        final XmlFactory xmlFactory = XmlFactory.getFactory();
 
         final XmlDocument xmlDocument = xmlFactory.parseString( xmlValue, AccessMode.IMMUTABLE );
         final Optional<XmlElement> optionalRecordElement = xmlDocument.evaluateXpathToElement( "/history/record" );

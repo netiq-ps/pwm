@@ -88,7 +88,6 @@ import java.util.Set;
  */
 
 @WebServlet(
-        name = "GuestRegistrationServlet",
         urlPatterns = {
                 PwmConstants.URL_PREFIX_PRIVATE + "/guest-registration",
                 PwmConstants.URL_PREFIX_PRIVATE + "/GuestRegistration",
@@ -128,9 +127,9 @@ public class GuestRegistrationServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass()
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass()
     {
-        return GuestRegistrationAction.class;
+        return Optional.of( GuestRegistrationAction.class );
     }
 
     @Override

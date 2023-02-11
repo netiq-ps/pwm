@@ -26,7 +26,6 @@ import com.novell.ldapchai.exception.ChaiUnavailableException;
 import com.novell.ldapchai.util.ConfigObjectRecord;
 import lombok.Value;
 import org.jrivard.xmlchai.AccessMode;
-import org.jrivard.xmlchai.XmlChai;
 import org.jrivard.xmlchai.XmlDocument;
 import org.jrivard.xmlchai.XmlElement;
 import org.jrivard.xmlchai.XmlFactory;
@@ -39,12 +38,12 @@ import password.pwm.config.profile.LdapProfile;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.user.UserInfo;
 import password.pwm.svc.event.AuditEvent;
 import password.pwm.svc.event.AuditEventType;
 import password.pwm.svc.event.AuditRecordFactory;
 import password.pwm.svc.event.HelpdeskAuditRecord;
 import password.pwm.svc.event.UserAuditRecord;
+import password.pwm.user.UserInfo;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
@@ -53,7 +52,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Serializable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -260,7 +258,7 @@ public class LdapXmlUserHistory implements UserHistoryStore
 
         public String toXml( )
         {
-            final XmlFactory xmlFactory = XmlChai.getFactory();
+            final XmlFactory xmlFactory = XmlFactory.getFactory();
             final XmlDocument doc = xmlFactory.newDocument( XML_NODE_ROOT );
 
             for ( final StoredEvent loopEvent : records )
@@ -308,7 +306,7 @@ public class LdapXmlUserHistory implements UserHistoryStore
 
             try ( InputStream inputStream = new ByteArrayInputStream( input.getBytes( PwmConstants.DEFAULT_CHARSET ) ) )
             {
-                final XmlFactory xmlFactory = XmlChai.getFactory();
+                final XmlFactory xmlFactory = XmlFactory.getFactory();
                 final XmlDocument xmlDocument = xmlFactory.parse( inputStream, AccessMode.IMMUTABLE );
                 final XmlElement rootElement = xmlDocument.getRootElement();
 
@@ -339,7 +337,7 @@ public class LdapXmlUserHistory implements UserHistoryStore
     }
 
     @Value
-    public static class StoredEvent implements Serializable
+    public static class StoredEvent
     {
         private final AuditEvent auditEvent;
         private final long timestamp;

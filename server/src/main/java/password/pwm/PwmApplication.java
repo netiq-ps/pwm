@@ -36,7 +36,6 @@ import password.pwm.http.state.SessionStateService;
 import password.pwm.svc.PwmService;
 import password.pwm.svc.PwmServiceEnum;
 import password.pwm.svc.PwmServiceManager;
-import password.pwm.svc.cache.CacheService;
 import password.pwm.svc.db.DatabaseAccessor;
 import password.pwm.svc.db.DatabaseService;
 import password.pwm.svc.email.EmailService;
@@ -47,7 +46,6 @@ import password.pwm.svc.httpclient.HttpClientService;
 import password.pwm.svc.intruder.IntruderRecordType;
 import password.pwm.svc.intruder.IntruderSystemService;
 import password.pwm.svc.node.NodeService;
-import password.pwm.svc.report.ReportService;
 import password.pwm.svc.secure.SystemSecureService;
 import password.pwm.svc.sessiontrack.SessionTrackService;
 import password.pwm.svc.sessiontrack.UserAgentUtils;
@@ -69,7 +67,9 @@ import password.pwm.util.logging.LocalDBLogger;
 import password.pwm.util.logging.PwmLogManager;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -159,16 +159,16 @@ public class PwmApplication
         // clear temp dir
         if ( !pwmEnvironment.isInternalRuntimeInstance() )
         {
-            final File tempFileDirectory = getTempDirectory();
+            final Path tempFileDirectory = getTempDirectory();
             try
             {
                 LOGGER.debug( sessionLabel, () -> "deleting directory (and sub-directory) contents in " + tempFileDirectory );
-                FileSystemUtility.deleteDirectoryContentsRecursively( tempFileDirectory.toPath() );
+                FileSystemUtility.deleteDirectoryContentsRecursively( tempFileDirectory );
             }
             catch ( final Exception e )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_STARTUP_ERROR,
-                        "unable to clear temp file directory '" + tempFileDirectory.getAbsolutePath() + "', error: " + e.getMessage()
+                        "unable to clear temp file directory '" + tempFileDirectory + "', error: " + e.getMessage()
                 ) );
             }
         }
@@ -176,8 +176,8 @@ public class PwmApplication
         if ( getApplicationMode() != PwmApplicationMode.READ_ONLY )
         {
             LOGGER.info( sessionLabel, () -> "initializing, application mode=" + getApplicationMode()
-                    + ", applicationPath=" + ( pwmEnvironment.getApplicationPath() == null ? "null" : pwmEnvironment.getApplicationPath().getAbsolutePath() )
-                    + ", configFile=" + ( pwmEnvironment.getConfigurationFile() == null ? "null" : pwmEnvironment.getConfigurationFile().getAbsolutePath() )
+                    + ", applicationPath=" + ( pwmEnvironment.getApplicationPath() == null ? "null" : pwmEnvironment.getApplicationPath() )
+                    + ", configFile=" + ( pwmEnvironment.getConfigurationFile() == null ? "null" : pwmEnvironment.getConfigurationFile() )
             );
         }
 
@@ -218,7 +218,7 @@ public class PwmApplication
         PwmDomainUtil.initDomains( this, domains().values() );
 
         final boolean skipPostInit = pwmEnvironment.isInternalRuntimeInstance()
-                || pwmEnvironment.getFlags().contains( PwmEnvironment.ApplicationFlag.CommandLineInstance );
+                || pwmEnvironment.readPropertyAsBoolean( EnvironmentProperty.CommandLineInstance );
 
         if ( !skipPostInit )
         {
@@ -275,9 +275,8 @@ public class PwmApplication
         PwmApplicationUtil.outputKeystore( this );
         PwmApplicationUtil.outputTomcatConf( this );
 
-        LOGGER.debug( sessionLabel, () -> "application environment flags: " + StringUtil.collectionToString( pwmEnvironment.getFlags() ) );
         LOGGER.debug( sessionLabel, () -> "application environment parameters: "
-                + StringUtil.mapToString( pwmEnvironment.getParameters() ) );
+                + StringUtil.mapToString( pwmEnvironment.readProperties() ) );
 
         PwmApplicationUtil.outputApplicationInfoToLog( this );
         PwmApplicationUtil.outputConfigurationToLog( this, DomainID.systemId() );
@@ -684,11 +683,6 @@ public class PwmApplication
         return ( WordlistService ) pwmServiceManager.getService( PwmServiceEnum.WordlistService );
     }
 
-    public ReportService getReportService( )
-    {
-        return ( ReportService ) pwmServiceManager.getService( PwmServiceEnum.ReportService );
-    }
-
     public EmailService getEmailQueue( )
     {
         return ( EmailService ) pwmServiceManager.getService( PwmServiceEnum.EmailService );
@@ -741,7 +735,7 @@ public class PwmApplication
         return ( DatabaseService ) pwmServiceManager.getService( PwmServiceEnum.DatabaseService );
     }
 
-    public StatisticsService getStatisticsManager( )
+    public StatisticsService getStatisticsService( )
     {
         return ( StatisticsService ) pwmServiceManager.getService( PwmServiceEnum.StatisticsService );
     }
@@ -749,12 +743,6 @@ public class PwmApplication
     public SessionStateService getSessionStateService( )
     {
         return ( SessionStateService ) pwmServiceManager.getService( PwmServiceEnum.SessionStateSvc );
-    }
-
-
-    public CacheService getCacheService( )
-    {
-        return ( CacheService ) pwmServiceManager.getService( PwmServiceEnum.CacheService );
     }
 
     public SystemSecureService getSecureService( )
@@ -782,7 +770,8 @@ public class PwmApplication
         return this.getConfig().isMultiDomain();
     }
 
-    public File getTempDirectory( ) throws PwmUnrecoverableException
+    public Path getTempDirectory( )
+            throws PwmUnrecoverableException
     {
         if ( pwmEnvironment.getApplicationPath() == null )
         {
@@ -792,21 +781,21 @@ public class PwmApplication
             );
             throw new PwmUnrecoverableException( errorInformation );
         }
-        final File tempDirectory = new File( pwmEnvironment.getApplicationPath() + File.separator + "temp" );
-        if ( !tempDirectory.exists() )
+        final Path tempDirectory = pwmEnvironment.getApplicationPath().resolve( "temp" );
+        if ( !Files.exists( tempDirectory ) )
         {
-            LOGGER.trace( () -> "preparing to create temporary directory " + tempDirectory.getAbsolutePath() );
-            if ( tempDirectory.mkdir() )
+            LOGGER.trace( () -> "preparing to create temporary directory " + tempDirectory );
+            try
             {
-                LOGGER.debug( () -> "created " + tempDirectory.getAbsolutePath() );
+                Files.createDirectories( tempDirectory );
+                LOGGER.debug( () -> "created " + tempDirectory );
             }
-            else
+            catch ( final IOException e )
             {
-                LOGGER.debug( () -> "unable to create temporary directory " + tempDirectory.getAbsolutePath() );
+                LOGGER.debug( () -> "unable to create temporary directory " + tempDirectory );
                 final ErrorInformation errorInformation = new ErrorInformation(
                         PwmError.ERROR_STARTUP_ERROR,
-                        "unable to establish create temp work directory " + tempDirectory.getAbsolutePath()
-                );
+                        "unable to establish create temp work directory " + tempDirectory );
                 throw new PwmUnrecoverableException( errorInformation );
             }
         }

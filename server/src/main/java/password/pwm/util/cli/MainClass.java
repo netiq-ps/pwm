@@ -21,6 +21,7 @@
 package password.pwm.util.cli;
 
 import password.pwm.AppProperty;
+import password.pwm.EnvironmentProperty;
 import password.pwm.PwmApplication;
 import password.pwm.PwmApplicationMode;
 import password.pwm.PwmConstants;
@@ -66,14 +67,13 @@ import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBFactory;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.File;
-import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -179,11 +179,11 @@ public class MainClass
     {
 
         final Map<String, Object> options = parseCommandOptions( parameters, args );
-        final File applicationPath = figureApplicationPath( mainOptions );
-        out( "applicationPath=" + applicationPath.getAbsolutePath() );
+        final Path applicationPath = figureApplicationPath( mainOptions );
+        out( "applicationPath=" + applicationPath );
         PwmEnvironment.verifyApplicationPath( applicationPath );
 
-        final File configurationFile = locateConfigurationFile( applicationPath );
+        final Path configurationFile = locateConfigurationFile( applicationPath );
 
         final ConfigurationFileManager configReader = loadConfiguration( configurationFile );
         final AppConfig config = configReader.getConfiguration();
@@ -193,7 +193,7 @@ public class MainClass
 
         if ( parameters.needsPwmApplication )
         {
-            pwmApplication = loadPwmApplication( applicationPath, mainOptions.getApplicationFlags(), config, configurationFile, parameters.readOnly );
+            pwmApplication = loadPwmApplication( applicationPath, config, configurationFile, parameters.readOnly );
             localDB = pwmApplication.getLocalDB();
         }
         else if ( parameters.needsLocalDB )
@@ -250,10 +250,10 @@ public class MainClass
                         case NEW_FILE:
                             try
                             {
-                                final File theFile = new File( argument );
-                                if ( theFile.exists() )
+                                final Path theFile = Path.of( argument );
+                                if ( Files.exists( theFile ) )
                                 {
-                                    throw new CliException( "file for option '" + option.getName() + "' at '" + theFile.getAbsolutePath() + "' already exists" );
+                                    throw new CliException( "file for option '" + option.getName() + "' at '" + theFile + "' already exists" );
                                 }
                                 returnObj.put( option.getName(), theFile );
                             }
@@ -270,10 +270,10 @@ public class MainClass
                         case EXISTING_FILE:
                             try
                             {
-                                final File theFile = new File( argument );
-                                if ( !theFile.exists() )
+                                final Path theFile = Path.of( argument );
+                                if ( !Files.exists( theFile ) )
                                 {
-                                    throw new CliException( "file for option '" + option.getName() + "' at '" + theFile.getAbsolutePath() + "' does not exist" );
+                                    throw new CliException( "file for option '" + option.getName() + "' at '" + theFile + "' does not exist" );
                                 }
                                 returnObj.put( option.getName(), theFile );
                             }
@@ -402,17 +402,17 @@ public class MainClass
     private static LocalDB loadPwmDB(
             final AppConfig config,
             final boolean readonly,
-            final File applicationPath
+            final Path applicationPath
     )
             throws Exception
     {
-        final File databaseDirectory;
+        final Path databaseDirectory;
         final String pwmDBLocationSetting = config.readAppProperty( AppProperty.LOCALDB_LOCATION );
         databaseDirectory = FileSystemUtility.figureFilepath( pwmDBLocationSetting, applicationPath );
         return LocalDBFactory.getInstance( databaseDirectory, readonly, null, config );
     }
 
-    private static ConfigurationFileManager loadConfiguration( final File configurationFile ) throws Exception
+    private static ConfigurationFileManager loadConfiguration( final Path configurationFile ) throws Exception
     {
         final ConfigurationFileManager reader = new ConfigurationFileManager( configurationFile, SessionLabel.CLI_SESSION_LABEL );
 
@@ -427,31 +427,23 @@ public class MainClass
     }
 
     private static PwmApplication loadPwmApplication(
-            final File applicationPath,
-            final Collection<PwmEnvironment.ApplicationFlag> flags,
+            final Path applicationPath,
             final AppConfig config,
-            final File configurationFile,
+            final Path configurationFile,
             final boolean readonly
     )
             throws PwmUnrecoverableException
     {
         final PwmApplicationMode mode = readonly ? PwmApplicationMode.READ_ONLY : PwmApplicationMode.RUNNING;
-        final Collection<PwmEnvironment.ApplicationFlag> applicationFlags = EnumSet.noneOf( PwmEnvironment.ApplicationFlag.class  );
-        if ( flags == null )
-        {
-            applicationFlags.addAll( PwmEnvironment.ParseHelper.readApplicationFlagsFromSystem( null ) );
-        }
-        else
-        {
-            applicationFlags.addAll( flags );
-        }
-        applicationFlags.add( PwmEnvironment.ApplicationFlag.CommandLineInstance );
+        System.setProperty(
+                PwmConstants.PWM_APP_NAME.toLowerCase() + "." + EnvironmentProperty.CommandLineInstance.name(),
+                Boolean.TRUE.toString() );
+
         final PwmEnvironment pwmEnvironment = PwmEnvironment.builder()
                 .config( config )
                 .applicationPath( applicationPath )
                 .applicationMode( mode )
                 .configurationFile( configurationFile )
-                .flags( applicationFlags )
                 .build();
 
         final PwmApplication pwmApplication = PwmApplication.createPwmApplication( pwmEnvironment );
@@ -465,9 +457,9 @@ public class MainClass
         return pwmApplication;
     }
 
-    private static File locateConfigurationFile( final File applicationPath )
+    private static Path locateConfigurationFile( final Path applicationPath )
     {
-        return new File( applicationPath + File.separator + PwmConstants.DEFAULT_CONFIG_FILE_FILENAME );
+        return applicationPath.resolve( PwmConstants.DEFAULT_CONFIG_FILE_FILENAME );
     }
 
     private static void out( final CharSequence txt )
@@ -475,31 +467,31 @@ public class MainClass
         System.out.println( txt );
     }
 
-    private static File figureApplicationPath( final MainOptions mainOptions ) throws IOException, PwmUnrecoverableException
+    private static Path figureApplicationPath( final MainOptions mainOptions ) throws PwmUnrecoverableException
     {
-        final File applicationPath;
+        final Path applicationPath;
         if ( mainOptions != null && mainOptions.getApplicationPath() != null )
         {
             applicationPath = mainOptions.getApplicationPath();
         }
         else
         {
-            final Optional<String> appPathStr = PwmEnvironment.ParseHelper.readValueFromSystem( PwmEnvironment.EnvironmentParameter.applicationPath, null );
+            final Optional<Path> appPathStr = EnvironmentProperty.readApplicationPath( null );
             if ( appPathStr.isPresent() )
             {
-                applicationPath = new File( appPathStr.get() );
+                applicationPath = appPathStr.get();
             }
             else
             {
                 final String errorMsg = "unable to locate applicationPath.  Specify using -applicationPath option, java option "
-                        + "\"" + PwmEnvironment.EnvironmentParameter.applicationPath.conicalJavaOptionSystemName() + "\""
+                        + "\"" + EnvironmentProperty.applicationPath.conicalJavaOptionSystemName( null ) + "\""
                         + ", or system environment setting "
-                        + "\"" + PwmEnvironment.EnvironmentParameter.applicationPath.conicalEnvironmentSystemName() + "\"";
+                        + "\"" + EnvironmentProperty.applicationPath.conicalEnvironmentSystemName( null ) + "\"";
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_STARTUP_ERROR, errorMsg ) );
             }
         }
 
-        LOGGER.debug( () -> "using applicationPath " + applicationPath.getAbsolutePath() );
+        LOGGER.debug( () -> "using applicationPath " + applicationPath );
         return applicationPath;
     }
 }

@@ -44,9 +44,11 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Optional;
 
 public abstract class CommandServlet extends ControlledPwmServlet
 {
+
     private static final PwmLogger LOGGER = PwmLogger.forClass( CommandServlet.class );
 
     @Override
@@ -56,9 +58,9 @@ public abstract class CommandServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return CommandAction.class;
+        return Optional.of( CommandAction.class );
     }
 
     public enum CommandAction implements ProcessAction

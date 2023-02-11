@@ -33,9 +33,8 @@ import ch.qos.logback.core.encoder.LayoutWrappingEncoder;
 import ch.qos.logback.core.filter.Filter;
 import ch.qos.logback.core.joran.spi.ConfigurationWatchList;
 import ch.qos.logback.core.joran.util.ConfigurationWatchListUtil;
-import ch.qos.logback.core.rolling.FixedWindowRollingPolicy;
 import ch.qos.logback.core.rolling.RollingFileAppender;
-import ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy;
+import ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy;
 import ch.qos.logback.core.util.FileSize;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.slf4j.LoggerFactory;
@@ -49,10 +48,10 @@ import password.pwm.util.java.FileSystemUtility;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBException;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 
@@ -104,18 +103,18 @@ public class PwmLogManager
     public static void initializeLogging(
             final PwmApplication pwmApplication,
             final AppConfig config,
-            final File pwmApplicationPath,
+            final Path pwmApplicationPath,
             final PwmLogSettings pwmLogSettings
     )
     {
         if ( pwmApplicationPath != null )
         {
-            final File logbackXmlInAppPath = new File( pwmApplicationPath.getPath() + File.separator + "logback.xml" );
-            if ( logbackXmlInAppPath.exists() )
+            final Path logbackXmlInAppPath = pwmApplicationPath.resolve( "logback.xml" );
+            if ( Files.exists( logbackXmlInAppPath ) )
             {
                 if ( PwmLogUtil.initLogbackFromXmlFile( logbackXmlInAppPath ) )
                 {
-                    LOGGER.info( () -> "used appPath logback xml file '" + logbackXmlInAppPath.getPath()
+                    LOGGER.info( () -> "used appPath logback xml file '" + logbackXmlInAppPath
                             + "' to configure logging system, will ignore configured logging settings " );
                 }
             }
@@ -139,6 +138,9 @@ public class PwmLogManager
 
         initConsoleLogger( config, pwmLogSettings.getStdoutLevel() );
         initFileLogger( config, pwmLogSettings.getFileLevel(), pwmApplicationPath );
+
+        // for debugging
+        // StatusPrinter.print( getLoggerContext() );
     }
 
     static PwmLogLevel getLowestLogLevelConfigured()
@@ -183,13 +185,8 @@ public class PwmLogManager
         final LoggerContext context = getLoggerContext();
         final ConfigurationWatchList configurationWatchList = ConfigurationWatchListUtil.getConfigurationWatchList( context );
 
-        if ( configurationWatchList != null )
-        {
-            final List<File> watchList = ConfigurationWatchListUtil.getConfigurationWatchList( context ).getCopyOfFileWatchList();
-            return !watchList.isEmpty();
-        }
-
-        return false;
+        return configurationWatchList != null
+                && ConfigurationWatchListUtil.getConfigurationWatchList( context ).getCopyOfFileWatchList().isEmpty();
     }
 
     static LoggerContext getLoggerContext()
@@ -257,44 +254,34 @@ public class PwmLogManager
     private static void initFileLogger(
             final AppConfig config,
             final PwmLogLevel fileLogLevel,
-            final File pwmApplicationPath
+            final Path pwmApplicationPath
     )
     {
         // configure file logging
         final String logDirectorySetting = config.readAppProperty( AppProperty.LOGGING_FILE_PATH );
-        final File logDirectory = FileSystemUtility.figureFilepath( logDirectorySetting, pwmApplicationPath );
+        final Path logDirectory = FileSystemUtility.figureFilepath( logDirectorySetting, pwmApplicationPath );
 
         if ( logDirectory != null && fileLogLevel != null )
         {
             try
             {
-                if ( !logDirectory.exists() )
+                if ( !Files.exists( logDirectory ) )
                 {
-                    if ( logDirectory.mkdir() )
-                    {
-                        LOGGER.info( () -> "created directory " + logDirectory.getAbsoluteFile() );
-                    }
-                    else
-                    {
-                        throw new IOException( "failed to create directory " + logDirectory.getAbsoluteFile() );
-                    }
+                    Files.createDirectories( logDirectory );
+                    LOGGER.info( () -> "created directory " + logDirectory );
                 }
 
-                final String fileName = logDirectory.getAbsolutePath() + File.separator + PwmConstants.PWM_APP_NAME + ".log";
-                final String fileNamePattern = logDirectory.getAbsolutePath() + File.separator + PwmConstants.PWM_APP_NAME + ".log.%i.zip";
+                final String fileName = logDirectory.resolve( PwmConstants.PWM_APP_NAME + ".log" ).toString();
+                final String fileNamePattern = logDirectory.resolve( PwmConstants.PWM_APP_NAME + ".log.%d{yyyy-MM-dd}.%i.gz" ).toString();
 
                 final LoggerContext logCtx = getLoggerContext();
 
-                final FixedWindowRollingPolicy rollingPolicy = new FixedWindowRollingPolicy();
-                rollingPolicy.setContext( logCtx );
-                rollingPolicy.setMinIndex( 1 );
-                rollingPolicy.setMaxIndex( Integer.parseInt( config.readAppProperty( AppProperty.LOGGING_FILE_MAX_ROLLOVER ) )  );
-                rollingPolicy.setFileNamePattern( fileNamePattern );
-
-                final SizeBasedTriggeringPolicy<ILoggingEvent> sizeBasedTriggeringPolicy = new SizeBasedTriggeringPolicy<>();
-                sizeBasedTriggeringPolicy.setMaxFileSize( FileSize.valueOf( config.readAppProperty( AppProperty.LOGGING_FILE_MAX_SIZE ) ) );
-                sizeBasedTriggeringPolicy.setContext( logCtx );
-                sizeBasedTriggeringPolicy.start();
+                final SizeAndTimeBasedRollingPolicy<ILoggingEvent> sizeAndTimeBasedRollingPolicy = new SizeAndTimeBasedRollingPolicy<>();
+                sizeAndTimeBasedRollingPolicy.setContext( logCtx );
+                sizeAndTimeBasedRollingPolicy.setFileNamePattern( fileNamePattern );
+                sizeAndTimeBasedRollingPolicy.setMaxFileSize( FileSize.valueOf( config.readAppProperty( AppProperty.LOGGING_FILE_MAX_FILE_SIZE ) ) );
+                sizeAndTimeBasedRollingPolicy.setTotalSizeCap( FileSize.valueOf( config.readAppProperty( AppProperty.LOGGING_FILE_MAX_TOTAL_SIZE ) ) );
+                sizeAndTimeBasedRollingPolicy.setMaxHistory( Integer.parseInt( config.readAppProperty( AppProperty.LOGGING_FILE_MAX_HISTORY ) ) );
 
                 final RollingFileAppender<ILoggingEvent> fileAppender = new RollingFileAppender<>();
                 fileAppender.setContext( logCtx );
@@ -303,12 +290,11 @@ public class PwmLogManager
                 fileAppender.setFile( fileName );
                 fileAppender.setPrudent( false );
                 fileAppender.addFilter( makeLevelFilter( fileLogLevel ) );
-                fileAppender.setRollingPolicy( rollingPolicy );
-                fileAppender.setTriggeringPolicy( sizeBasedTriggeringPolicy );
+                fileAppender.setTriggeringPolicy( sizeAndTimeBasedRollingPolicy );
 
-                rollingPolicy.setParent( fileAppender );
+                sizeAndTimeBasedRollingPolicy.setParent( fileAppender );
+                sizeAndTimeBasedRollingPolicy.start();
 
-                rollingPolicy.start();
                 fileAppender.start();
 
                 attachAppender( fileAppender );

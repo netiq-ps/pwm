@@ -21,9 +21,9 @@
 package password.pwm.config;
 
 import org.jrivard.xmlchai.AccessMode;
-import org.jrivard.xmlchai.XmlChai;
 import org.jrivard.xmlchai.XmlDocument;
 import org.jrivard.xmlchai.XmlElement;
+import org.jrivard.xmlchai.XmlFactory;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import password.pwm.PwmConstants;
@@ -38,7 +38,6 @@ import password.pwm.util.json.JsonFactory;
 import password.pwm.util.secure.PwmSecurityKey;
 
 import java.io.InputStream;
-import java.io.Serializable;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -72,7 +71,7 @@ public class PwmSettingTest
                 Assertions.assertNotNull( storedValue.valueHash() );
                 if ( storedValue.toNativeObject() != null )
                 {
-                    JsonFactory.get().serialize( ( Serializable ) storedValue.toNativeObject() );
+                    JsonFactory.get().serialize( storedValue.toNativeObject() );
                 }
             }
         }
@@ -82,7 +81,7 @@ public class PwmSettingTest
     public void testSettingXmlPresence() throws Exception
     {
         final InputStream inputStream = PwmSetting.class.getClassLoader().getResourceAsStream( PwmSettingXml.SETTING_XML_FILENAME );
-        final XmlDocument xmlDoc = XmlChai.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
+        final XmlDocument xmlDoc = XmlFactory.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
 
         for ( final PwmSetting pwmSetting : PwmSetting.values() )
         {
@@ -96,7 +95,7 @@ public class PwmSettingTest
     public void testSettingXmlDuplication() throws Exception
     {
         final InputStream inputStream = PwmSetting.class.getClassLoader().getResourceAsStream( PwmSettingXml.SETTING_XML_FILENAME );
-        final XmlDocument xmlDoc = XmlChai.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
+        final XmlDocument xmlDoc = XmlFactory.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
 
         for ( final PwmSetting pwmSetting : PwmSetting.values() )
         {
@@ -110,7 +109,7 @@ public class PwmSettingTest
     public void testUnknownSettingXml() throws Exception
     {
         final InputStream inputStream = PwmSetting.class.getClassLoader().getResourceAsStream( PwmSettingXml.SETTING_XML_FILENAME );
-        final XmlDocument xmlDoc = XmlChai.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
+        final XmlDocument xmlDoc = XmlFactory.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
 
         final String expression = "/settings/setting";
         final List<XmlElement> results = xmlDoc.evaluateXpathToElements( expression );

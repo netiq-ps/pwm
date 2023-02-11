@@ -25,6 +25,7 @@ import lombok.Builder;
 import lombok.Value;
 import password.pwm.PwmApplication;
 import password.pwm.PwmEnvironment;
+import password.pwm.config.AppConfig;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmRequest;
 import password.pwm.http.PwmRequestUtil;
@@ -37,7 +38,6 @@ import password.pwm.util.logging.PwmLogEvent;
 import password.pwm.util.logging.PwmLogger;
 
 import javax.servlet.http.HttpServletRequest;
-import java.io.Serializable;
 import java.util.Objects;
 
 @Value
@@ -45,7 +45,7 @@ import java.util.Objects;
 /**
  * Increasingly miss-named data class that represents request/operation actor and origin data.
  */
-public class SessionLabel implements Serializable
+public class SessionLabel
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( SessionLabel.class );
 
@@ -191,7 +191,7 @@ public class SessionLabel implements Serializable
                 .build();
     }
 
-    public String toDebugLabel( )
+    public String toDebugLabel( final AppConfig appConfig )
     {
         final StringBuilder sb = new StringBuilder();
         final String sessionID = getSessionID();
@@ -201,13 +201,17 @@ public class SessionLabel implements Serializable
         {
             sb.append( sessionID );
         }
+
         if ( StringUtil.notEmpty( domain ) )
         {
-            if ( sb.length() > 0 )
+            if ( appConfig == null || appConfig.getDomainConfigs().size() > 1 )
             {
-                sb.append( ',' );
+                if ( sb.length() > 0 )
+                {
+                    sb.append( ',' );
+                }
+                sb.append( domain );
             }
-            sb.append( domain );
         }
 
         if ( actorType == ActorType.user && StringUtil.notEmpty( username ) )

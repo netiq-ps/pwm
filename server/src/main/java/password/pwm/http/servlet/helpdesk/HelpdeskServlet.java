@@ -61,7 +61,6 @@ import password.pwm.http.servlet.ControlledPwmServlet;
 import password.pwm.http.servlet.peoplesearch.PhotoDataReader;
 import password.pwm.http.servlet.peoplesearch.SearchRequestBean;
 import password.pwm.i18n.Message;
-import password.pwm.ldap.LdapOperationsHelper;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.ldap.search.SearchConfiguration;
 import password.pwm.ldap.search.UserSearchResults;
@@ -83,8 +82,8 @@ import password.pwm.user.UserInfo;
 import password.pwm.util.PasswordData;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.PwmTimeUtil;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.json.JsonFactory;
@@ -173,9 +172,9 @@ public class HelpdeskServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return HelpdeskAction.class;
+        return Optional.of( HelpdeskAction.class );
     }
 
 
@@ -524,7 +523,7 @@ public class HelpdeskServlet extends ControlledPwmServlet
             final SearchConfiguration.SearchConfigurationBuilder builder = SearchConfiguration.builder();
             builder.contexts( helpdeskProfile.readSettingAsStringArray( PwmSetting.HELPDESK_SEARCH_BASE ) );
             builder.enableContextValidation( false );
-            builder.enableValueEscaping( false );
+            builder.enableValueEscaping( true );
             builder.enableSplitWhitespace( true );
 
             if ( !useProxy )
@@ -1162,18 +1161,12 @@ public class HelpdeskServlet extends ControlledPwmServlet
         }
 
         final ChaiUser chaiUser = HelpdeskServletUtil.getChaiUser( pwmRequest, helpdeskProfile, userIdentity );
-        final String userGUID = LdapOperationsHelper.readLdapGuidValue(
-                pwmRequest.getPwmDomain(),
-                pwmRequest.getLabel(),
-                userIdentity,
-                true );
 
         final CrService crService = pwmRequest.getPwmDomain().getCrService();
         crService.clearResponses(
                 pwmRequest.getLabel(),
                 userIdentity,
-                chaiUser,
-                userGUID
+                chaiUser
         );
 
         // mark the event log

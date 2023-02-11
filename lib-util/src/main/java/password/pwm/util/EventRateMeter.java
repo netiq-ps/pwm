@@ -22,7 +22,6 @@ package password.pwm.util;
 
 import password.pwm.util.java.PwmNumberFormat;
 
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Locale;
@@ -30,13 +29,13 @@ import java.util.Objects;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class EventRateMeter implements Serializable
+public class EventRateMeter
 {
     private final long maxDuration;
     private final Lock lock = new ReentrantLock();
 
-    private MovingAverage movingAverage;
-    private double remainder;
+    private volatile MovingAverage movingAverage;
+    private volatile double remainder;
 
     public EventRateMeter( final Duration maxDuration )
     {

@@ -69,7 +69,6 @@ import password.pwm.http.PwmRequest;
 import password.pwm.http.PwmRequestContext;
 import password.pwm.http.PwmSession;
 import password.pwm.ldap.LdapOperationsHelper;
-import password.pwm.user.UserInfo;
 import password.pwm.ldap.auth.AuthenticationType;
 import password.pwm.ldap.auth.PwmAuthenticationSource;
 import password.pwm.ldap.permission.UserPermissionUtility;
@@ -85,17 +84,17 @@ import password.pwm.svc.stats.AvgStatistic;
 import password.pwm.svc.stats.EpsStatistic;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
+import password.pwm.user.UserInfo;
 import password.pwm.util.PasswordData;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.PwmUtil;
-import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
 import password.pwm.util.operations.ActionExecutor;
 
-import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -484,10 +483,10 @@ public class PasswordUtility
         }
 
         // update stats
-        pwmDomain.getStatisticsManager().updateEps( EpsStatistic.PASSWORD_CHANGES, 1 );
+        pwmDomain.getStatisticsService().updateEps( EpsStatistic.PASSWORD_CHANGES, 1 );
 
         final int passwordStrength = PasswordUtility.judgePasswordStrength( pwmDomain.getConfig(), newPassword.getStringValue() );
-        pwmDomain.getStatisticsManager().updateAverageValue( AvgStatistic.AVG_PASSWORD_STRENGTH, passwordStrength );
+        pwmDomain.getStatisticsService().updateAverageValue( AvgStatistic.AVG_PASSWORD_STRENGTH, passwordStrength );
 
         // at this point the password has been changed, so log it.
         final String msg = ( bindIsSelf
@@ -592,8 +591,7 @@ public class PasswordUtility
 
         if ( settingClearResponses == HelpdeskClearResponseMode.yes )
         {
-            final String userGUID = LdapOperationsHelper.readLdapGuidValue( pwmDomain, sessionLabel, userIdentity, false );
-            pwmDomain.getCrService().clearResponses( pwmRequest.getLabel(), userIdentity, proxiedUser, userGUID );
+            pwmDomain.getCrService().clearResponses( pwmRequest.getLabel(), userIdentity, proxiedUser );
 
             // mark the event log
             final HelpdeskAuditRecord auditRecord = AuditRecordFactory.make( pwmRequest ).createHelpdeskAuditRecord(
@@ -1191,7 +1189,7 @@ public class PasswordUtility
     }
 
 
-    public static class PasswordCheckInfo implements Serializable
+    public static class PasswordCheckInfo
     {
         private final String message;
         private final boolean passed;

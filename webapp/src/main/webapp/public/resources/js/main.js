@@ -1310,7 +1310,7 @@ PWM_MAIN.JSLibrary.readValueOfSelectElement = function(nodeID) {
     if (element && element.options && element.selectedIndex >= 0) {
         return element.options[element.selectedIndex].value;
     }
-    return "";
+    return null;
 };
 
 PWM_MAIN.JSLibrary.setValueOfSelectElement = function(nodeID, value) {
@@ -1596,7 +1596,17 @@ PWM_MAIN.IdleTimeoutHandler.initCountDownTimer = function(secondsRemaining) {
 };
 
 PWM_MAIN.IdleTimeoutHandler.cancelCountDownTimer = function() {
+    if ( !PWM_GLOBAL['idle_suspendTimeout'] ) { PWM_MAIN.log('disabling idle timeout handler'); }
     PWM_GLOBAL['idle_suspendTimeout'] = true;
+};
+
+PWM_MAIN.IdleTimeoutHandler.resumeCountDownTimer = function() {
+    if ( PWM_GLOBAL['idle_suspendTimeout'] ) { PWM_MAIN.log('enabling idle timeout handler'); }
+    PWM_GLOBAL['idle_suspendTimeout'] = false;
+};
+
+PWM_MAIN.IdleTimeoutHandler.countDownTimerEnabled = function() {
+    return PWM_GLOBAL['idle_suspendTimeout'] === true;
 };
 
 PWM_MAIN.IdleTimeoutHandler.resetIdleCounter = function() {

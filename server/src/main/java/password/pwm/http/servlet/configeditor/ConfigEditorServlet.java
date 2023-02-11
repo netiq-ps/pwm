@@ -67,7 +67,7 @@ import password.pwm.http.servlet.configeditor.data.NavTreeItem;
 import password.pwm.http.servlet.configeditor.data.NavTreeSettings;
 import password.pwm.http.servlet.configeditor.data.SettingData;
 import password.pwm.http.servlet.configeditor.data.SettingDataMaker;
-import password.pwm.http.servlet.configmanager.ConfigManagerServlet;
+import password.pwm.http.servlet.admin.system.ConfigManagerServlet;
 import password.pwm.i18n.Config;
 import password.pwm.i18n.Message;
 import password.pwm.i18n.PwmLocaleBundle;
@@ -175,9 +175,9 @@ public class ConfigEditorServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return ConfigEditorAction.class;
+        return Optional.of( ConfigEditorAction.class );
     }
 
     @Override
@@ -615,7 +615,7 @@ public class ConfigEditorServlet extends ControlledPwmServlet
         else
         {
             final Map<String, String> testParams = pwmRequest.readBodyAsJsonStringMap();
-            final SmsItemBean testSmsItem = new SmsItemBean( testParams.get( "to" ), testParams.get( "message" ), pwmRequest.getLabel() );
+            final SmsItemBean testSmsItem = new SmsItemBean( testParams.get( "to" ), testParams.get( "message" ) );
             try
             {
                 final PwmHttpClientResponse responseBody = SmsQueueService.sendDirectMessage(

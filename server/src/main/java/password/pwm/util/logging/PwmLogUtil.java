@@ -34,6 +34,7 @@ import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
 import password.pwm.bean.LoginInfoBean;
 import password.pwm.bean.SessionLabel;
+import password.pwm.config.AppConfig;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.svc.event.AuditEvent;
@@ -43,8 +44,10 @@ import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.json.JsonFactory;
 
-import java.io.File;
-import java.io.Serializable;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -107,9 +110,9 @@ class PwmLogUtil
      * @return true if successfully loaded and initialized loggers
      * @see <a href=" https://logback.qos.ch/manual/configuration.html#joranDirectly">Logback Docs</a>
      */
-    public static boolean initLogbackFromXmlFile( final File file )
+    public static boolean initLogbackFromXmlFile( final Path file )
     {
-        if ( !file.exists() )
+        if ( !Files.exists( file ) )
         {
             return false;
         }
@@ -123,9 +126,16 @@ class PwmLogUtil
             configurator.setContext( context );
 
             context.reset();
-            configurator.doConfigure( file );
+            try ( InputStream inputStream = Files.newInputStream( file ) )
+            {
+                configurator.doConfigure( inputStream );
+            }
 
             return true;
+        }
+        catch ( final IOException e  )
+        {
+            /* can't be logged... */
         }
         catch ( final JoranException je )
         {
@@ -189,7 +199,11 @@ class PwmLogUtil
         final StringBuilder output = new StringBuilder();
         if ( sessionLabel != null )
         {
-            output.append( sessionLabel.toDebugLabel() );
+            final AppConfig appConfig = PwmLogManager.getPwmApplication() == null
+                    ? null
+                    : PwmLogManager.getPwmApplication().getConfig();
+
+            output.append( sessionLabel.toDebugLabel( appConfig ) );
         }
 
         output.append( message );
@@ -226,7 +240,7 @@ class PwmLogUtil
 
     @Value
     @Builder
-    private static class LogToAuditMessageInfo implements Serializable
+    private static class LogToAuditMessageInfo
     {
         private final String level;
         private final String actor;

@@ -131,9 +131,9 @@ public class ActivateUserServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return ActivateUserAction.class;
+        return Optional.of( ActivateUserAction.class );
     }
 
     @Override

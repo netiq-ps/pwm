@@ -103,9 +103,9 @@ public class LoginServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return LoginServletAction.class;
+        return Optional.of( LoginServletAction.class );
     }
 
     private boolean passwordOnly( final PwmRequest pwmRequest )

@@ -51,6 +51,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
+import java.util.concurrent.atomic.LongAccumulator;
 import java.util.concurrent.atomic.LongAdder;
 
 class MoshiJsonAdaptors
@@ -66,6 +67,7 @@ class MoshiJsonAdaptors
         moshiBuilder.add( DomainID.class, applyFlagsToAdapter( new DomainIdAdaptor(), flags ) );
         moshiBuilder.add( ProfileID.class, applyFlagsToAdapter( new ProfileIdAdaptor(), flags ) );
         moshiBuilder.add( LongAdder.class, applyFlagsToAdapter( new LongAdderTypeAdaptor(), flags ) );
+        moshiBuilder.add( LongAccumulator.class, applyFlagsToAdapter( new LongAccumulatorTypeAdaptor(), flags ) );
         moshiBuilder.add( BigInteger.class, applyFlagsToAdapter( new BigIntegerTypeAdaptor(), flags ) );
         moshiBuilder.add( Locale.class, applyFlagsToAdapter( new LocaleTypeAdaptor(), flags ) );
         moshiBuilder.add( TimeDuration.class, applyFlagsToAdapter( new TimeDurationAdaptor(), flags ) );
@@ -335,6 +337,33 @@ class MoshiJsonAdaptors
         }
     }
 
+    private static class LongAccumulatorTypeAdaptor extends JsonAdapter<LongAccumulator>
+    {
+        @Nullable
+        @Override
+        public LongAccumulator fromJson( final JsonReader reader ) throws IOException
+        {
+            final String strValue = reader.nextString();
+            final long longValue = Long.parseLong( strValue );
+            final LongAccumulator longAccumulator = JavaHelper.newAbsLongAccumulator();
+            longAccumulator.accumulate( longValue );
+            return longAccumulator;
+        }
+
+        @Override
+        public void toJson( final JsonWriter writer, @Nullable final LongAccumulator value ) throws IOException
+        {
+            if ( value == null )
+            {
+                writer.nullValue();
+                return;
+            }
+
+            writer.value( value.longValue() );
+        }
+    }
+
+
     private static class LongAdderTypeAdaptor extends JsonAdapter<LongAdder>
     {
         @Nullable
@@ -343,9 +372,9 @@ class MoshiJsonAdaptors
         {
             final String strValue = reader.nextString();
             final long longValue = Long.parseLong( strValue );
-            final LongAdder longAddr = new LongAdder();
-            longAddr.add( longValue );
-            return longAddr;
+            final LongAdder longAdder = new LongAdder();
+            longAdder.add( longValue );
+            return longAdder;
         }
 
         @Override

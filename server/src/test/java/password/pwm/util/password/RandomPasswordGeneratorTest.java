@@ -20,7 +20,7 @@
 
 package password.pwm.util.password;
 
-import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import password.pwm.PwmApplication;
@@ -50,7 +50,7 @@ public class RandomPasswordGeneratorTest
     public void generateRandomPasswordsTest()
             throws PwmUnrecoverableException, IOException
     {
-        final PwmApplication pwmApplication = TestHelper.makeTestPwmApplication( temporaryFolder.toFile() );
+        final PwmApplication pwmApplication = TestHelper.makeTestPwmApplication( temporaryFolder );
         final PwmDomain pwmDomain = pwmApplication.domains().get( DomainID.DOMAIN_ID_DEFAULT );
         final Map<String, String> policyMap = new HashMap<>( PwmPasswordPolicy.defaultPolicy().getPolicyMap() );
         policyMap.put( PwmPasswordRule.AllowNumeric.getKey(), "true" );

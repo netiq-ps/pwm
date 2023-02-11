@@ -94,9 +94,9 @@ public class ShortcutServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass()
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass()
     {
-        return ShortcutAction.class;
+        return Optional.of( ShortcutAction.class );
     }
 
     @Override

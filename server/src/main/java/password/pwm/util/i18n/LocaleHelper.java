@@ -494,6 +494,25 @@ public class LocaleHelper
         return getLocalizedMessage( locale, Display.Value_NotApplicable, null );
     }
 
+    public static String orNotApplicable( final Object input )
+    {
+        return orNotApplicable( input, PwmConstants.DEFAULT_LOCALE );
+    }
+
+    public static String orNotApplicable( final Object input, final Locale locale )
+    {
+        if ( input == null )
+        {
+            return valueNotApplicable( locale );
+        }
+        final String stringValue = input.toString();
+        if ( StringUtil.isEmpty( stringValue ) )
+        {
+            return valueNotApplicable( locale );
+        }
+        return stringValue;
+    }
+
     public static TextDirection textDirectionForLocale( final PwmDomain pwmDomain, final Locale locale )
     {
         final String rtlRegex = pwmDomain.getConfig().readAppProperty( AppProperty.L10N_RTL_REGEX );
@@ -512,5 +531,29 @@ public class LocaleHelper
             returnMap.put( LocaleHelper.getBrowserLocaleString( entry.getKey() ), entry.getValue() );
         }
         return Collections.unmodifiableMap( returnMap );
+    }
+
+    public static class Factory
+    {
+        private final SettingReader settingReader;
+        private final Locale locale;
+        private final Class<? extends PwmDisplayBundle> bundle;
+
+        private Factory( final SettingReader settingReader, final Locale locale, final Class<? extends PwmDisplayBundle> bundle )
+        {
+            this.settingReader = settingReader;
+            this.locale = locale;
+            this.bundle = bundle;
+        }
+
+        public static Factory createFactory( final SettingReader settingReader, final Locale locale, final Class<? extends PwmDisplayBundle> bundle )
+        {
+            return new Factory( settingReader, locale, bundle );
+        }
+
+        public String get( final String key )
+        {
+            return getLocalizedMessage( locale, key, settingReader, bundle );
+        }
     }
 }

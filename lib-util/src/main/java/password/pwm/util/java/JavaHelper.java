@@ -49,8 +49,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAccumulator;
 import java.util.function.Predicate;
 import java.util.zip.GZIPInputStream;
@@ -73,11 +71,6 @@ public final class JavaHelper
             chars[2 * i + 1] = HEX_CHAR_ARRAY[buf[i] & 0x0F];
         }
         return new String( chars );
-    }
-
-    public static <E extends Enum<E>> E readEnumFromString( final Class<E> enumClass, final E defaultValue, final String input )
-    {
-        return EnumUtil.readEnumFromString( enumClass, input ).orElse( defaultValue );
     }
 
     public static String throwableToString( final Throwable throwable )
@@ -124,7 +117,7 @@ public final class JavaHelper
     public static long copy( final InputStream input, final OutputStream output )
             throws IOException
     {
-        return IOUtils.copyLarge( input, output, 0, -1 );
+        return input.transferTo( output );
     }
 
 
@@ -164,8 +157,10 @@ public final class JavaHelper
     public static void copy( final String input, final OutputStream output, final Charset charset )
             throws IOException
     {
-        final ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream( input.getBytes( charset ) );
-        JavaHelper.copy( byteArrayInputStream, output );
+        try ( ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream( input.getBytes( charset ) ) )
+        {
+            byteArrayInputStream.transferTo( output );
+        }
     }
 
     public static long copyWhilePredicate(
@@ -497,35 +492,17 @@ public final class JavaHelper
         return newByteArray;
     }
 
-    /**
-     * Close executor and wait up to the specified TimeDuration for all executor jobs to terminate.  There is no guarantee that either all jobs will
-     * terminate or the entire duration will be waited for, though the duration should not be exceeded.
-     * @param executor Executor close
-     * @param timeDuration TimeDuration to wait for
-     */
-    public static void closeAndWaitExecutor( final ExecutorService executor, final TimeDuration timeDuration )
-    {
-        if ( executor == null )
-        {
-            return;
-        }
-
-        executor.shutdown();
-        try
-        {
-            executor.awaitTermination( timeDuration.asMillis(), TimeUnit.MILLISECONDS );
-        }
-        catch ( final InterruptedException e )
-        {
-            /* ignore */
-        }
-    }
-
     public static String stackTraceToString( final Throwable e )
     {
         final Writer stackTraceOutput = new StringWriter();
         e.printStackTrace( new PrintWriter( stackTraceOutput ) );
         return stackTraceOutput.toString();
 
+    }
+
+    public static long nextPositiveLong( final long input )
+    {
+        final long next = input + 1;
+        return next > 0 ? next : 0;
     }
 }

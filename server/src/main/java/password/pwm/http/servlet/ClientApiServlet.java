@@ -45,6 +45,7 @@ import password.pwm.http.ProcessStatus;
 import password.pwm.http.PwmHttpRequestWrapper;
 import password.pwm.http.PwmRequest;
 import password.pwm.http.PwmSession;
+import password.pwm.http.PwmURL;
 import password.pwm.i18n.Display;
 import password.pwm.svc.sessiontrack.UserAgentUtils;
 import password.pwm.svc.stats.EpsStatistic;
@@ -68,7 +69,7 @@ import password.pwm.ws.server.rest.bean.PublicHealthData;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import java.io.IOException;
-import java.io.Serializable;
+import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -101,14 +102,14 @@ public class ClientApiServlet extends ControlledPwmServlet
     }
 
     @Data
-    public static class AppData implements Serializable
+    public static class AppData
     {
         @SuppressWarnings( "checkstyle:MemberName" )
         public Map<String, Object> PWM_GLOBAL;
     }
 
     @Data
-    public static class PingResponse implements Serializable
+    public static class PingResponse
     {
         private Instant time;
         private String runtimeNonce;
@@ -139,9 +140,9 @@ public class ClientApiServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return ClientApiServlet.ClientApiAction.class;
+        return Optional.of( ClientApiAction.class );
     }
 
     @Override
@@ -334,7 +335,8 @@ public class ClientApiServlet extends ControlledPwmServlet
             {
                 try
                 {
-                    final TimeDuration maxIdleTime = IdleTimeoutCalculator.idleTimeoutForRequest( pwmRequest );
+                    final PwmURL pwmUrl = PwmURL.create( URI.create( pageUrl ), pwmRequest.getContextPath(), pwmRequest.getAppConfig() );
+                    final TimeDuration maxIdleTime = IdleTimeoutCalculator.idleTimeoutForRequest( pwmRequest, pwmUrl );
                     idleSeconds = maxIdleTime.as( TimeDuration.Unit.SECONDS );
                 }
                 catch ( final Exception e )
@@ -464,7 +466,7 @@ public class ClientApiServlet extends ControlledPwmServlet
         final String statName = pwmRequest.readParameterAsString( "statName" );
         final String days = pwmRequest.readParameterAsString( "days" );
 
-        final StatisticsService statisticsManager = pwmRequest.getPwmDomain().getStatisticsManager();
+        final StatisticsService statisticsManager = pwmRequest.getPwmDomain().getStatisticsService();
         final RestStatisticsServer.OutputVersion1.JsonOutput jsonOutput = new RestStatisticsServer.OutputVersion1.JsonOutput();
         jsonOutput.EPS = RestStatisticsServer.OutputVersion1.addEpsStats( statisticsManager );
 

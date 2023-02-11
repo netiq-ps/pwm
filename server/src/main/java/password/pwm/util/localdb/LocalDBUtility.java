@@ -28,20 +28,18 @@ import password.pwm.PwmConstants;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.util.EventRateMeter;
+import password.pwm.util.Percent;
 import password.pwm.util.ProgressInfoCalculator;
 import password.pwm.util.TransactionSizeCalculator;
 import password.pwm.util.java.AverageTracker;
 import password.pwm.util.java.ConditionalTaskExecutor;
-import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.PwmUtil;
-import password.pwm.util.Percent;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.PwmTimeUtil;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -49,6 +47,8 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Reader;
 import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -120,7 +120,7 @@ public class LocalDBUtility
                 if ( loopDB.isBackup() )
                 {
                     csvPrinter.printComment( "Export of " + loopDB );
-                    try ( LocalDB.LocalDBIterator<Map.Entry<String, String>> localDBIterator = localDB.iterator( loopDB ) )
+                    try ( LocalDB.LocalDBIterator localDBIterator = localDB.iterator( loopDB ) )
                     {
                         while ( localDBIterator.hasNext() )
                         {
@@ -167,7 +167,7 @@ public class LocalDBUtility
         try ( ZipOutputStream zipOutputStream = new ZipOutputStream( outputStream, PwmConstants.DEFAULT_CHARSET ) )
         {
             zipOutputStream.putNextEntry( new ZipEntry( "wordlist.txt" ) );
-            try ( LocalDB.LocalDBIterator<Map.Entry<String, String>> localDBIterator = localDB.iterator( LocalDB.DB.WORDLIST_WORDS ) )
+            try ( LocalDB.LocalDBIterator localDBIterator = localDB.iterator( LocalDB.DB.WORDLIST_WORDS ) )
             {
                 while ( localDBIterator.hasNext() )
                 {
@@ -228,7 +228,7 @@ public class LocalDBUtility
         }
     }
 
-    public void importLocalDB( final File inputFile, final PrintStream out )
+    public void importLocalDB( final Path inputFile, final PrintStream out )
             throws PwmOperationalException, IOException
     {
         if ( inputFile == null )
@@ -236,19 +236,19 @@ public class LocalDBUtility
             throw new PwmOperationalException( PwmError.ERROR_INTERNAL, "inputFile for importLocalDB cannot be null" );
         }
 
-        if ( !inputFile.exists() )
+        if ( !Files.exists( inputFile ) )
         {
             throw new PwmOperationalException( PwmError.ERROR_INTERNAL, "inputFile for importLocalDB does not exist" );
         }
 
-        final long totalBytes = inputFile.length();
+        final long totalBytes = Files.size( inputFile );
 
         if ( totalBytes <= 0 )
         {
             throw new PwmOperationalException( PwmError.ERROR_INTERNAL, "inputFile for importLocalDB is empty" );
         }
 
-        try ( InputStream inputStream = new FileInputStream( inputFile ) )
+        try ( InputStream inputStream = Files.newInputStream( inputFile ) )
         {
             importLocalDB( inputStream, out, totalBytes );
         }
@@ -334,17 +334,18 @@ public class LocalDBUtility
                         eventRateMeter.markEvent();
                         byteReaderCounter = countingInputStream.getByteCount();
                         final String dbNameRecordStr = record.get( 0 );
-                        final LocalDB.DB db = JavaHelper.readEnumFromString( LocalDB.DB.class, null, dbNameRecordStr );
+                        final Optional<LocalDB.DB> db = EnumUtil.readEnumFromString( LocalDB.DB.class, dbNameRecordStr );
                         final String key = record.get( 1 );
                         final String value = record.get( 2 );
-                        if ( db == null )
+                        if ( db.isEmpty() )
                         {
-                            writeStringToOut( debugOutput, "ignoring localdb import record #" + lineReaderCounter + ", invalid DB name '" + dbNameRecordStr + "'" );
+                            writeStringToOut( debugOutput, "ignoring localdb import record #"
+                                    + lineReaderCounter + ", invalid DB name '" + dbNameRecordStr + "'" );
                         }
                         else
                         {
                             transactionCharCounter += key.length() + value.length();
-                            transactionMap.get( db ).put( key, value );
+                            transactionMap.get( db.get() ).put( key, value );
                             cachedTransactions++;
                             if ( cachedTransactions >= transactionCalculator.getTransactionSize() || transactionCharCounter > MAX_CHAR_PER_TRANSACTIONS )
                             {
@@ -434,7 +435,7 @@ public class LocalDBUtility
         long storedChars = 0;
         final long totalChars = 0;
 
-        try ( LocalDB.LocalDBIterator<Map.Entry<String, String>> iter = localDB.iterator( db ) )
+        try ( LocalDB.LocalDBIterator iter = localDB.iterator( db ) )
         {
             while ( iter.hasNext() )
             {

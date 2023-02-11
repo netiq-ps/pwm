@@ -49,17 +49,14 @@ import password.pwm.i18n.Display;
 import password.pwm.ldap.permission.UserPermissionType;
 import password.pwm.ldap.permission.UserPermissionUtility;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.PwmTimeUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -69,7 +66,7 @@ public class UserMatchViewerFunction implements SettingUIFunction
     private static final PwmLogger LOGGER = PwmLogger.forClass( UserMatchViewerFunction.class );
 
     @Override
-    public Serializable provideFunction(
+    public Object provideFunction(
             final PwmRequest pwmRequest,
             final StoredConfigurationModifier storedConfiguration,
             final StoredConfigKey key,
@@ -122,8 +119,8 @@ public class UserMatchViewerFunction implements SettingUIFunction
 
         final long maxSearchSeconds = pwmDomain.getConfig().getDefaultLdapProfile().readSettingAsLong( PwmSetting.LDAP_SEARCH_TIMEOUT );
         final TimeDuration maxSearchTime = TimeDuration.of( maxSearchSeconds, TimeDuration.Unit.SECONDS );
-        final Iterator<UserIdentity> matches =  UserPermissionUtility.discoverMatchingUsers( tempDomain, permissions, sessionLabel, maxResultSize, maxSearchTime );
-        final List<UserIdentity> sortedResults = new ArrayList<>( CollectionUtil.iteratorToList( matches ) );
+        final List<UserIdentity> matches =  UserPermissionUtility.discoverMatchingUsers( tempDomain, permissions, sessionLabel, maxResultSize, maxSearchTime );
+        final List<UserIdentity> sortedResults = new ArrayList<>( matches );
         Collections.sort( sortedResults );
         return Collections.unmodifiableList ( sortedResults );
     }
@@ -205,7 +202,7 @@ public class UserMatchViewerFunction implements SettingUIFunction
 
     @Value
     @Builder
-    public static class UserMatchViewerResults implements Serializable
+    public static class UserMatchViewerResults
     {
         private Collection<UserIdentity> users;
         private boolean sizeExceeded;

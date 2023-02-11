@@ -20,6 +20,7 @@
 
 package password.pwm.util.localdb;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,6 @@ import password.pwm.PwmApplication;
 import password.pwm.util.java.FileSystemUtility;
 import password.pwm.util.secure.PwmRandom;
 
-import java.io.File;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
@@ -52,9 +52,15 @@ public class LocalDBBasicTest
     @BeforeEach
     public void setUp() throws Exception
     {
-        final File localDbTestFolder = FileSystemUtility.createDirectory( temporaryFolder, "test-stored-queue-test" );
+        final Path localDbTestFolder = FileSystemUtility.createDirectory( temporaryFolder, "test-stored-queue-test" );
         final PwmApplication pwmApplication = TestHelper.makeTestPwmApplication( localDbTestFolder );
         localDB = LocalDBFactory.getInstance( localDbTestFolder, false, pwmApplication.getPwmEnvironment(), pwmApplication.getConfig() );
+    }
+
+    @AfterEach
+    public void shutdown() throws Exception
+    {
+        localDB.close();
     }
 
     @Test
@@ -116,7 +122,7 @@ public class LocalDBBasicTest
         Assertions.assertEquals( BULK_COUNT, values.size() );
         Assertions.assertEquals( BULK_COUNT, localDB.size( TEST_DB ) );
 
-        try ( LocalDB.LocalDBIterator<Map.Entry<String, String>> iter = localDB.iterator( TEST_DB ) )
+        try ( LocalDB.LocalDBIterator iter = localDB.iterator( TEST_DB ) )
         {
             for ( int i = 0; i < BULK_COUNT; i++ )
             {

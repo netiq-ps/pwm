@@ -467,7 +467,7 @@ public class PwmHttpRequestWrapper
         return appConfig;
     }
 
-    public String getURLwithoutQueryString( )
+    public String getUrlWithoutQueryString( )
     {
         final HttpServletRequest req = this.getHttpServletRequest();
         final String requestUri = ( String ) req.getAttribute( "javax.servlet.forward.request_uri" );
@@ -536,7 +536,7 @@ public class PwmHttpRequestWrapper
 
         sb.append( req.getMethod() );
         sb.append( " request for: " );
-        sb.append( getURLwithoutQueryString() );
+        sb.append( getUrlWithoutQueryString() );
 
         if ( includeHeaders )
         {

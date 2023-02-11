@@ -55,8 +55,8 @@ import password.pwm.svc.event.AuditServiceClient;
 import password.pwm.svc.event.UserAuditRecord;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
-import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.ws.server.RestResultBean;
 
@@ -67,6 +67,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * User interaction servlet for setting up secret question/answer.
@@ -118,9 +119,9 @@ public class SetupResponsesServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return SetupResponsesAction.class;
+        return Optional.of( SetupResponsesAction.class );
     }
 
     private SetupResponsesBean getSetupResponseBean( final PwmRequest pwmRequest )
@@ -234,30 +235,23 @@ public class SetupResponsesServlet extends ControlledPwmServlet
         LOGGER.trace( pwmRequest, () -> "request for response clear received" );
         final PwmDomain pwmDomain = pwmRequest.getPwmDomain();
         final PwmSession pwmSession = pwmRequest.getPwmSession();
-        try
-        {
-            final String userGUID = pwmSession.getUserInfo().getUserGuid();
-            final ChaiUser theUser = pwmRequest.getClientConnectionHolder().getActor( );
-            pwmDomain.getCrService().clearResponses( pwmRequest.getLabel(), pwmRequest.getUserInfoIfLoggedIn(), theUser, userGUID );
-            pwmSession.reloadUserInfoBean( pwmRequest );
-            pwmRequest.getPwmDomain().getSessionStateService().clearBean( pwmRequest, SetupResponsesBean.class );
 
-            // mark the event log
-            final UserAuditRecord auditRecord = AuditRecordFactory.make( pwmRequest ).createUserAuditRecord(
-                    AuditEvent.CLEAR_RESPONSES,
-                    pwmSession.getUserInfo(),
-                    pwmSession
-            );
+        final ChaiUser theUser = pwmRequest.getClientConnectionHolder().getActor( );
+        pwmDomain.getCrService().clearResponses( pwmRequest.getLabel(), pwmRequest.getUserInfoIfLoggedIn(), theUser );
+        pwmSession.reloadUserInfoBean( pwmRequest );
+        pwmRequest.getPwmDomain().getSessionStateService().clearBean( pwmRequest, SetupResponsesBean.class );
 
-            AuditServiceClient.submit( pwmRequest, auditRecord );
+        // mark the event log
+        final UserAuditRecord auditRecord = AuditRecordFactory.make( pwmRequest ).createUserAuditRecord(
+                AuditEvent.CLEAR_RESPONSES,
+                pwmSession.getUserInfo(),
+                pwmSession
+        );
 
-            pwmRequest.getPwmResponse().sendRedirect( PwmServletDefinition.SetupResponses );
-        }
-        catch ( final PwmOperationalException e )
-        {
-            LOGGER.debug( pwmRequest, e.getErrorInformation() );
-            setLastError( pwmRequest, e.getErrorInformation() );
-        }
+        AuditServiceClient.submit( pwmRequest, auditRecord );
+
+        pwmRequest.getPwmResponse().sendRedirect( PwmServletDefinition.SetupResponses );
+
         return ProcessStatus.Continue;
     }
 
@@ -452,8 +446,7 @@ public class SetupResponsesServlet extends ControlledPwmServlet
         final PwmDomain pwmDomain = pwmRequest.getPwmDomain();
         final PwmSession pwmSession = pwmRequest.getPwmSession();
         final ChaiUser theUser = pwmRequest.getClientConnectionHolder().getActor( );
-        final String userGUID = pwmSession.getUserInfo().getUserGuid();
-        pwmDomain.getCrService().writeResponses( pwmRequest.getLabel(), pwmRequest.getUserInfoIfLoggedIn(), theUser, userGUID, responseInfoBean );
+        pwmDomain.getCrService().writeResponses( pwmRequest.getLabel(), pwmRequest.getUserInfoIfLoggedIn(), theUser, responseInfoBean );
         pwmSession.reloadUserInfoBean( pwmRequest );
 
         StatisticsClient.incrementStat( pwmRequest, Statistic.SETUP_RESPONSES );

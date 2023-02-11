@@ -72,6 +72,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class RequestInitializationFilter implements Filter
@@ -293,9 +294,9 @@ public class RequestInitializationFilter implements Filter
     {
         if ( localPwmApplication != null && localPwmApplication.getApplicationMode() == PwmApplicationMode.RUNNING )
         {
-            if ( localPwmApplication.getStatisticsManager() != null )
+            if ( localPwmApplication.getStatisticsService() != null )
             {
-                localPwmApplication.getStatisticsManager().updateEps( EpsStatistic.REQUESTS, 1 );
+                localPwmApplication.getStatisticsService().updateEps( EpsStatistic.REQUESTS, 1 );
             }
         }
     }
@@ -488,6 +489,31 @@ public class RequestInitializationFilter implements Filter
         }
     }
 
+    private static void checkURlPathSegments( final PwmRequest pwmRequest )
+            throws PwmUnrecoverableException
+    {
+        if ( pwmRequest.getURL().isResourceURL() )
+        {
+            return;
+        }
+
+        final String checkRegexPatternString = pwmRequest.getAppConfig().readAppProperty( AppProperty.SECURITY_HTTP_PERMITTED_URL_PATH_CHARS );
+        if ( StringUtil.isEmpty( checkRegexPatternString ) )
+        {
+            return;
+        }
+
+        final Pattern pattern = Pattern.compile( checkRegexPatternString );
+        for ( final String pathPart : pwmRequest.getURL().getPathSegments() )
+        {
+            if ( !pattern.matcher( pathPart ).matches() )
+            {
+                final String errorMsg = "request URL path segment contains illegal characters";
+                final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_SECURITY_VIOLATION, errorMsg );
+                throw new PwmUnrecoverableException( errorInformation );
+            }
+        }
+    }
 
     private static void handleRequestInitialization(
             final PwmRequest pwmRequest
@@ -553,6 +579,9 @@ public class RequestInitializationFilter implements Filter
     {
         // check the user's IP address
         checkIfSourceAddressChanged( pwmRequest );
+
+        // check url path segments
+        checkURlPathSegments( pwmRequest );
 
         // check total time.
         checkTotalSessionTime( pwmRequest );
@@ -722,14 +751,14 @@ public class RequestInitializationFilter implements Filter
     {
         if ( PwmConstants.TRIAL_MODE )
         {
-            final StatisticsService statisticsManager = pwmRequest.getPwmDomain().getStatisticsManager();
-            final String currentAuthString = statisticsManager.getStatBundleForKey( StatisticsService.KEY_CURRENT ).getStatistic( Statistic.AUTHENTICATIONS );
+            final StatisticsService statisticsManager = pwmRequest.getPwmDomain().getStatisticsService();
+            final String currentAuthString = statisticsManager.getCurrentBundle().getStatistic( Statistic.AUTHENTICATIONS );
             if ( new BigInteger( currentAuthString ).compareTo( BigInteger.valueOf( PwmConstants.TRIAL_MAX_AUTHENTICATIONS ) ) > 0 )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_TRIAL_VIOLATION, "maximum usage per server startup exceeded" ) );
             }
 
-            final String totalAuthString = statisticsManager.getStatBundleForKey( StatisticsService.KEY_CUMULATIVE ).getStatistic( Statistic.AUTHENTICATIONS );
+            final String totalAuthString = statisticsManager.getCumulativeBundle().getStatistic( Statistic.AUTHENTICATIONS );
             if ( new BigInteger( totalAuthString ).compareTo( BigInteger.valueOf( PwmConstants.TRIAL_MAX_TOTAL_AUTH ) ) > 0 )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_TRIAL_VIOLATION, "maximum usage for this server has been exceeded" ) );

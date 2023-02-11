@@ -50,6 +50,8 @@ public abstract class ControlledPwmServlet extends AbstractPwmServlet implements
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( AbstractPwmServlet.class );
 
+
+
     private final Map<? extends ProcessAction, Method> actionMethodCache = createMethodCache();
 
     @Override
@@ -66,14 +68,18 @@ public abstract class ControlledPwmServlet extends AbstractPwmServlet implements
         throw new IllegalStateException( "unable to determine PwmServletDefinition for class " + this.getClass().getName() );
     }
 
-    public abstract Class<? extends ProcessAction> getProcessActionsClass( );
+    public abstract Optional<Class<? extends ProcessAction>> getProcessActionsClass( );
 
     @Override
     protected Optional<? extends ProcessAction> readProcessAction( final PwmRequest request )
             throws PwmUnrecoverableException
     {
-        final Class processStatusClass = getProcessActionsClass();
-        return EnumUtil.readEnumFromString( processStatusClass,  request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
+        final Optional<Class<? extends ProcessAction>> processStatusClass = getProcessActionsClass();
+        if ( processStatusClass.isEmpty() )
+        {
+            return Optional.empty();
+        }
+        return EnumUtil.readEnumFromString( ( Class ) processStatusClass.get(),  request.readParameterAsString( PwmConstants.PARAM_ACTION_REQUEST ) );
     }
 
     private ProcessStatus dispatchMethod(
@@ -203,9 +209,11 @@ public abstract class ControlledPwmServlet extends AbstractPwmServlet implements
             if ( method.getAnnotation( ActionHandler.class ) != null )
             {
                 final String actionName = method.getAnnotation( ActionHandler.class ).action();
-                final Class processActionClass = getProcessActionsClass();
-                final Optional<? extends ProcessAction> processAction = EnumUtil.readEnumFromString( processActionClass, actionName );
-                processAction.ifPresent( action -> map.put( action, method ) );
+                getProcessActionsClass().ifPresent( processActionClass ->
+                {
+                    final Optional<? extends ProcessAction> processAction = EnumUtil.readEnumFromString( ( Class ) processActionClass, actionName );
+                    processAction.ifPresent( action -> map.put( action, method ) );
+                } );
 
             }
         }

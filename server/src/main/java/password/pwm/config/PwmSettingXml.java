@@ -21,10 +21,11 @@
 package password.pwm.config;
 
 import org.jrivard.xmlchai.AccessMode;
-import org.jrivard.xmlchai.XmlChai;
 import org.jrivard.xmlchai.XmlDocument;
 import org.jrivard.xmlchai.XmlElement;
-import password.pwm.util.java.JavaHelper;
+import org.jrivard.xmlchai.XmlFactory;
+import password.pwm.util.PwmScheduler;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.LazySupplier;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
@@ -72,8 +73,8 @@ public class PwmSettingXml
 
     private static final PwmLogger LOGGER = PwmLogger.forClass( PwmSettingXml.class );
 
-    private static final LazySupplier<XmlDocument> XML_DOC_CACHE = LazySupplier.synchronizedSupplier(
-            LazySupplier.create( PwmSettingXml::readXml ) );
+    private static final LazySupplier<XmlDocument> XML_DOC_CACHE = LazySupplier.createSynchronized(
+            PwmSettingXml::readXml );
 
     private static final AtomicInteger LOAD_COUNTER = new AtomicInteger( 0 );
 
@@ -82,12 +83,18 @@ public class PwmSettingXml
         try ( InputStream inputStream = PwmSetting.class.getClassLoader().getResourceAsStream( SETTING_XML_FILENAME ) )
         {
             final Instant startTime = Instant.now();
-            final XmlDocument newDoc = XmlChai.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
+            final XmlDocument newDoc = XmlFactory.getFactory().parse( inputStream, AccessMode.IMMUTABLE );
             final TimeDuration parseDuration = TimeDuration.fromCurrent( startTime );
             LOGGER.trace( () -> "parsed PwmSettingXml in " + parseDuration.asCompactString() + ", loads=" + LOAD_COUNTER.getAndIncrement() );
 
-            final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
-            scheduledExecutorService.schedule( XML_DOC_CACHE::clear, 30, TimeUnit.SECONDS );
+            final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(
+                    PwmScheduler.makePwmThreadFactory( "pwmSetting-xml-cache-timeout-thread" ) );
+
+            scheduledExecutorService.schedule( () ->
+            {
+                XML_DOC_CACHE.clear();
+                scheduledExecutorService.shutdownNow();
+            }, 30, TimeUnit.SECONDS );
 
             return newDoc;
         }
@@ -134,11 +141,8 @@ public class PwmSettingXml
         final Set<PwmSettingTemplate> definedTemplates = new LinkedHashSet<>();
         for ( final String templateStrValue : templateSplitValues )
         {
-            final PwmSettingTemplate template = JavaHelper.readEnumFromString( PwmSettingTemplate.class, null, templateStrValue );
-            if ( template != null )
-            {
-                definedTemplates.add( template );
-            }
+            EnumUtil.readEnumFromString( PwmSettingTemplate.class, templateStrValue )
+                    .ifPresent( definedTemplates::add );
         }
         return Collections.unmodifiableSet( definedTemplates );
     }

@@ -45,6 +45,7 @@ public enum PwmServiceEnum
 {
     LocalDBService( password.pwm.util.localdb.LocalDBService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     SystemSecureService( password.pwm.svc.secure.SystemSecureService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
+    EmailService( EmailService.class, PwmSettingScope.SYSTEM ),
     HttpClientService( password.pwm.svc.httpclient.HttpClientService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     DatabaseService( password.pwm.svc.db.DatabaseService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     SharedHistoryManager( SharedHistoryService.class, PwmSettingScope.SYSTEM ),
@@ -52,15 +53,12 @@ public enum PwmServiceEnum
     StatisticsService( StatisticsService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     WordlistService( WordlistService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     IntruderSystemService( IntruderSystemService.class, PwmSettingScope.SYSTEM ),
-    EmailService( EmailService.class, PwmSettingScope.SYSTEM ),
     SmsQueueManager( SmsQueueService.class, PwmSettingScope.SYSTEM ),
     UrlShortenerService( password.pwm.svc.shorturl.UrlShortenerService.class, PwmSettingScope.SYSTEM ),
-    CacheService( password.pwm.svc.cache.CacheService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     LdapSystemService( password.pwm.ldap.LdapSystemService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     TokenSystemService( password.pwm.svc.token.TokenSystemService.class, PwmSettingScope.SYSTEM ),
     HealthMonitor( HealthService.class, PwmSettingScope.SYSTEM ),
     DebugOutputService( password.pwm.health.DebugOutputService.class, PwmSettingScope.SYSTEM ),
-    ReportService( password.pwm.svc.report.ReportService.class, PwmSettingScope.SYSTEM, Flag.StartDuringRuntimeInstance ),
     SessionTrackService( password.pwm.svc.sessiontrack.SessionTrackService.class, PwmSettingScope.SYSTEM ),
     SessionStateSvc( password.pwm.http.state.SessionStateService.class, PwmSettingScope.SYSTEM ),
     TelemetryService( password.pwm.svc.telemetry.TelemetryService.class, PwmSettingScope.SYSTEM ),
@@ -68,6 +66,7 @@ public enum PwmServiceEnum
     NodeService( NodeService.class, PwmSettingScope.SYSTEM ),
 
     DomainSecureService( password.pwm.svc.secure.DomainSecureService.class, PwmSettingScope.DOMAIN, Flag.StartDuringRuntimeInstance ),
+    CacheService( password.pwm.svc.cache.CacheService.class, PwmSettingScope.DOMAIN, Flag.StartDuringRuntimeInstance ),
     LdapConnectionService( LdapDomainService.class, PwmSettingScope.DOMAIN, Flag.StartDuringRuntimeInstance ),
     CrService( password.pwm.svc.cr.CrService.class, PwmSettingScope.DOMAIN, Flag.StartDuringRuntimeInstance ),
     OtpService( password.pwm.svc.otp.OtpService.class, PwmSettingScope.DOMAIN ),
@@ -77,7 +76,8 @@ public enum PwmServiceEnum
     UserHistoryService( password.pwm.svc.userhistory.UserHistoryService.class, PwmSettingScope.DOMAIN, Flag.StartDuringRuntimeInstance ),
     PeopleSearchService( password.pwm.http.servlet.peoplesearch.PeopleSearchService.class, PwmSettingScope.DOMAIN ),
     PwExpiryNotifyService( PwNotifyService.class, PwmSettingScope.DOMAIN ),
-    ResourceServletService( password.pwm.http.servlet.resource.ResourceServletService.class, PwmSettingScope.DOMAIN ),;
+    ResourceServletService( password.pwm.http.servlet.resource.ResourceServletService.class, PwmSettingScope.DOMAIN ),
+    ReportService( password.pwm.svc.report.ReportService.class, PwmSettingScope.DOMAIN  ),;
 
 
     private final Class<? extends PwmService> clazz;

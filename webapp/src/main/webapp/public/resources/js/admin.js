@@ -49,13 +49,6 @@ PWM_ADMIN.initAdminNavMenu = function() {
                         PWM_MAIN.gotoUrl(PWM_GLOBAL['url-context'] + '/private/admin/urls');
                     }
                 }));
-                pMenu.addChild(new MenuItem({
-                    label: 'User Debug',
-                    id: 'userDebug_dropitem',
-                    onClick: function() {
-                        PWM_MAIN.gotoUrl(PWM_GLOBAL['url-context'] + '/private/admin/userdebug');
-                    }
-                }));
                 pMenu.addChild(new MenuSeparator());
                 pMenu.addChild(new MenuItem({
                     label: 'Full Page Health Status',
@@ -111,167 +104,54 @@ PWM_ADMIN.initAdminNavMenu = function() {
     PWM_MAIN.doIfQueryHasResults("#admin-nav-menu-container",makeMenu)
 };
 
-PWM_ADMIN.reportDataHeaders = function() {
-    return [
-        {field:"username",label:PWM_ADMIN.showString("Field_Report_Username")},
-        {field:"domainID",label:PWM_ADMIN.showString("Field_Report_DomainID"),hidden:true},
-        {field:"userDN",label:PWM_ADMIN.showString("Field_Report_UserDN"),hidden:true},
-        {field:"ldapProfile",label:PWM_ADMIN.showString("Field_Report_LDAP_Profile"),hidden:true},
-        {field:"email",label:PWM_ADMIN.showString("Field_Report_Email"),hidden:true},
-        {field:"userGUID",label:PWM_ADMIN.showString("Field_Report_UserGuid"),hidden:true},
-        {field:"accountExpirationTime",label:PWM_ADMIN.showString("Field_Report_AccountExpireTime")},
-        {field:"passwordExpirationTime",label:PWM_ADMIN.showString("Field_Report_PwdExpireTime")},
-        {field:"passwordChangeTime",label:PWM_ADMIN.showString("Field_Report_PwdChangeTime")},
-        {field:"responseSetTime",label:PWM_ADMIN.showString("Field_Report_ResponseSaveTime")},
-        {field:"lastLoginTime",label:PWM_ADMIN.showString("Field_Report_LastLogin")},
-        {field:"hasResponses",label:PWM_ADMIN.showString("Field_Report_HasResponses")},
-        {field:"hasHelpdeskResponses",label:PWM_ADMIN.showString("Field_Report_HasHelpdeskResponses"),hidden:true},
-        {field:"responseStorageMethod",label:PWM_ADMIN.showString("Field_Report_ResponseStorageMethod"),hidden:true},
-        {field:"responseFormatType",label:PWM_ADMIN.showString("Field_Report_ResponseFormatType"),hidden:true},
-        {field:"passwordStatusExpired",label:PWM_ADMIN.showString("Field_Report_PwdExpired"),hidden:true},
-        {field:"passwordStatusPreExpired",label:PWM_ADMIN.showString("Field_Report_PwdPreExpired"),hidden:true},
-        {field:"passwordStatusViolatesPolicy",label:PWM_ADMIN.showString("Field_Report_PwdViolatesPolicy"),hidden:true},
-        {field:"passwordStatusWarnPeriod",label:PWM_ADMIN.showString("Field_Report_PwdWarnPeriod"),hidden:true},
-        {field:"requiresPasswordUpdate",label:PWM_ADMIN.showString("Field_Report_RequiresPasswordUpdate")},
-        {field:"requiresResponseUpdate",label:PWM_ADMIN.showString("Field_Report_RequiresResponseUpdate")},
-        {field:"requiresProfileUpdate",label:PWM_ADMIN.showString("Field_Report_RequiresProfileUpdate")},
-        {field:"cacheTimestamp",label:PWM_ADMIN.showString("Field_Report_RecordCacheTime"),hidden:true}
-    ];
-};
 
-PWM_ADMIN.initReportDataGrid=function() {
-    var headers = PWM_ADMIN.reportDataHeaders();
-
-    require(["dojo","dojo/_base/declare", "dgrid/Grid", "dgrid/Keyboard", "dgrid/Selection", "dgrid/extensions/ColumnResizer", "dgrid/extensions/ColumnReorder", "dgrid/extensions/ColumnHider", "dgrid/extensions/DijitRegistry"],
-        function(dojo, declare, Grid, Keyboard, Selection, ColumnResizer, ColumnReorder, ColumnHider, DijitRegistry){
-            var columnHeaders = headers;
-
-            // Create a new constructor by mixing in the components
-            var CustomGrid = declare([ Grid, Keyboard, Selection, ColumnResizer, ColumnReorder, ColumnHider, DijitRegistry ]);
-
-            // Now, create an instance of our custom grid
-            PWM_VAR['reportGrid'] = new CustomGrid({columns: columnHeaders}, "grid");
-
-            PWM_VAR['reportGrid'].on(".dgrid-row:click", function(evt){
-                PWM_ADMIN.detailView(evt, PWM_ADMIN.reportDataHeaders(), PWM_VAR['reportGrid']);
-            });
-        });
-};
-
-PWM_ADMIN.initDownloadUserReportCsvForm = function() {
-    PWM_MAIN.doQuery("#downloadUserReportCsvForm", function(node){
+PWM_ADMIN.initDownloadProcessReportZipForm = function() {
+    PWM_MAIN.doQuery("#reportDownloadButton", function(node){
         PWM_MAIN.addEventHandler(node, "click", function() {
-            var selectedColumns = [];
-
-            PWM_MAIN.doQuery("#grid-hider-menu input:checked",function(element){
-                selectedColumns.push(element.id.replace('grid-hider-menu-check-', ''));
+            PWM_MAIN.showConfirmDialog({title:"Report Status",text:PWM_ADMIN.showString('Confirm_Report_Start'),okAction:function(){
+                    let url = PWM_MAIN.addParamToUrl(window.location.href,'processAction','downloadReportZip');
+                    url = PWM_MAIN.addParamToUrl(url,'recordCount',PWM_MAIN.getObject('recordCount').value);
+                    url = PWM_MAIN.addParamToUrl(url,'recordType',PWM_MAIN.JSLibrary.readValueOfSelectElement('recordType'));
+                    window.location.href = url;
+                }});
+        })
+    });
+    PWM_MAIN.doQuery("#reportCancelButton", function(node){
+        PWM_MAIN.addEventHandler(node, "click", function() {
+            var url = PWM_MAIN.addParamToUrl(window.location.href,'processAction','cancelDownload');
+            PWM_MAIN.ajaxRequest(url, function(){
+                PWM_MAIN.showDialog({title:"Report Status",text:"Download Cancelled"})
             });
-
-            console.log("Selected columns: " + selectedColumns);
-            downloadUserReportCsvForm.selectedColumns.value = selectedColumns;
         })
     });
 };
 
-PWM_ADMIN.refreshReportDataGrid=function() {
-    if (PWM_MAIN.getObject('button-refreshReportDataGrid')) {
-        PWM_MAIN.getObject('button-refreshReportDataGrid').disabled = true;
-    }
-    PWM_VAR['reportGrid'].refresh();
-    var maximum = PWM_MAIN.getObject('maxReportDataResults').value;
-    var url = PWM_MAIN.addParamToUrl(window.location.href,'processAction','reportData');
-    url =PWM_MAIN.addParamToUrl(url,"maximum",maximum);
-    var loadFunction = function(data) {
-        if (PWM_MAIN.getObject('button-refreshReportDataGrid')) {
-            PWM_MAIN.getObject('button-refreshReportDataGrid').disabled = false;
-        }
-        if (data['error']) {
-            PWM_MAIN.showErrorDialog(data);
-            return;
-        }
-
-        var users = data['data']['users'];
-
-        // "Flatten out" the nested properties, so they can be displayed in the grid
-        for (var i = 0, len = users.length; i < len; i++) {
-            var user = users[i];
-            if (user.hasOwnProperty("passwordStatus")) {
-                user["passwordStatusExpired"] = user["passwordStatus"]["expired"];
-                user["passwordStatusPreExpired"] = user["passwordStatus"]["preExpired"];
-                user["passwordStatusViolatesPolicy"] = user["passwordStatus"]["violatesPolicy"];
-                user["passwordStatusWarnPeriod"] = user["passwordStatus"]["warnPeriod"];
-            }
-        }
-
-        PWM_VAR['reportGrid'].renderArray(users);
-    };
-    PWM_MAIN.ajaxRequest(url,loadFunction,{method:'GET'});
-};
-
-
-PWM_ADMIN.refreshReportDataStatus=function() {
-    var url = PWM_GLOBAL['url-context'] + "/private/admin";
-    url = PWM_MAIN.addParamToUrl(url, 'processAction','reportStatus');
-    var loadFunction = function(data) {
+PWM_ADMIN.refreshReportProcessStatus=function() {
+    const url = PWM_MAIN.addParamToUrl(window.location.pathname, 'processAction','reportProcessStatus');
+    const loadFunction = function(data) {
         if (data['data'] && data['data']['presentable']) {
-            var fields = data['data']['presentable'];
-            var htmlTable = UILibrary.displayElementsToTableContents(fields);
-            PWM_MAIN.getObject('statusTable').innerHTML = htmlTable;
+            const fields = data['data']['presentable'];
+            PWM_MAIN.getObject('statusTable').innerHTML = UILibrary.displayElementsToTableContents(fields);
             UILibrary.initElementsToTableContents(fields);
         }
 
-        var availableCommands = data['data']['availableCommands'];
-        PWM_MAIN.getObject("reportStartButton").disabled = !PWM_MAIN.JSLibrary.arrayContains(availableCommands,'Start');
-        PWM_MAIN.getObject("reportStopButton").disabled = !PWM_MAIN.JSLibrary.arrayContains(availableCommands,'Stop');
-        PWM_MAIN.getObject("reportClearButton").disabled = !PWM_MAIN.JSLibrary.arrayContains(availableCommands,'Clear');
-    };
-    var errorFunction = function (error) {
-        console.log('error during report status update: ' + error);
-    };
-    PWM_MAIN.ajaxRequest(url,loadFunction,{method:'GET',errorFunction:errorFunction});
-};
+        const reportInProgress = data['data']['reportInProgress'] === true;
+        PWM_MAIN.getObject("reportDownloadButton").disabled = reportInProgress;
+        PWM_MAIN.getObject("reportCancelButton").disabled = !reportInProgress;
+        PWM_MAIN.getObject( "downloadReportOptionsFieldset" ).disabled = reportInProgress;
 
-PWM_ADMIN.refreshReportDataSummary=function() {
-    var url = PWM_GLOBAL['url-context'] + "/private/admin";
-    url = PWM_MAIN.addParamToUrl(url, 'processAction','reportSummary');
-
-    var loadFunction = function(data) {
-        if (data['data'] && data['data']['presentable']) {
-            var htmlTable = '';
-            for (var item in data['data']['presentable']) {
-                var rowData = data['data']['presentable'][item];
-                htmlTable += '<tr><td>' + rowData['label'] + '</td><td>' + rowData['count'] + '</td><td>' + (rowData['pct'] ? rowData['pct'] : '') + '</td></tr>';
+        if ( reportInProgress === PWM_MAIN.IdleTimeoutHandler.countDownTimerEnabled() ) {
+            if (reportInProgress) {
+                PWM_MAIN.IdleTimeoutHandler.cancelCountDownTimer()
+            } else {
+                PWM_MAIN.IdleTimeoutHandler.resumeCountDownTimer()
             }
-            PWM_MAIN.getObject('summaryTable').innerHTML = htmlTable;
         }
     };
-    var errorFunction = function (error) {
+    const errorFunction = function (error) {
         console.log('error during report status update: ' + error);
     };
-    PWM_MAIN.ajaxRequest(url,loadFunction,{method:'GET',errorFunction:errorFunction});
-};
-
-PWM_ADMIN.reportAction=function(action) {
-    var confirmText, actionText;
-    if (!action) {
-        return;
-    }
-    confirmText = PWM_ADMIN.showString('Confirm_Report_' + action);
-    actionText = PWM_ADMIN.showString('Display_Report_Action_' + action);
-    PWM_MAIN.showConfirmDialog({text:confirmText,okAction:function(){
-            PWM_MAIN.showWaitDialog({title:PWM_MAIN.showString('Display_PleaseWait'),text:actionText,loadFunction:function(){
-                    var url = PWM_GLOBAL['url-context'] + "/private/admin";
-                    url = PWM_MAIN.addParamToUrl(url, 'processAction','reportCommand');
-                    url = PWM_MAIN.addParamToUrl(url, 'command',action);
-                    PWM_MAIN.ajaxRequest(url,function(){
-                        setTimeout(function(){
-                            PWM_ADMIN.refreshReportDataStatus();
-                            PWM_ADMIN.refreshReportDataSummary();
-                            PWM_MAIN.closeWaitDialog();
-                        },7500);
-                    });
-                }});
-        }});
+    PWM_MAIN.ajaxRequest(url,loadFunction,{errorFunction:errorFunction});
 };
 
 PWM_ADMIN.webSessionHeaders = function() {

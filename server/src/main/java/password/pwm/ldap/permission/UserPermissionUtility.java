@@ -40,7 +40,6 @@ import password.pwm.util.logging.PwmLogger;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -129,7 +128,7 @@ public class UserPermissionUtility
         return match;
     }
 
-    public static Iterator<UserIdentity> discoverMatchingUsers(
+    public static List<UserIdentity> discoverMatchingUsers(
             final PwmDomain pwmDomain,
             final List<UserPermission> userPermissions,
             final SessionLabel sessionLabel,
@@ -140,7 +139,7 @@ public class UserPermissionUtility
     {
         if ( userPermissions == null )
         {
-            return Collections.emptyIterator();
+            return Collections.emptyList();
         }
 
         final List<UserPermission> sortedPermissions = new ArrayList<>( userPermissions );
@@ -182,7 +181,7 @@ public class UserPermissionUtility
         return strippedResults.stream()
                 .distinct()
                 .sorted()
-                .iterator();
+                .collect( Collectors.toUnmodifiableList() );
     }
 
     static Optional<ProfileID> profileIdForPermission( final UserPermission userPermission )

@@ -27,7 +27,7 @@ public enum AppAttribute
     CONFIG_HASH( "configurationSettingHash" ),
     LAST_LDAP_ERROR( "lastLdapError" ),
     // TOKEN_COUNTER( "tokenCounter" ), deprecated
-    REPORT_STATUS( "reporting.status" ),
+    // REPORT_STATUS( "reporting.status" ), deprecated
     // REPORT_CLEAN_FLAG("reporting.cleanFlag"), deprecated
     SMS_ITEM_COUNTER( "smsQueue.itemCount" ),
     EMAIL_ITEM_COUNTER( "itemQueue.itemCount" ),
@@ -38,7 +38,9 @@ public enum AppAttribute
     CONFIG_LOGIN_HISTORY( "config.loginHistory" ),
     LOCALDB_LOGGER_STORAGE_FORMAT( "localdb.logger.storage.format" ),
     TELEMETRY_LAST_PUBLISH_TIMESTAMP( "telemetry.lastPublish.timestamp" ),
-    VERSION_CHECK_CACHE( "versionCheckInfoCache" ),;
+    VERSION_CHECK_CACHE( "versionCheckInfoCache" ),
+    REPORT_COUNTER( "report.counter" ),;
+
 
     private final String key;
 

@@ -71,7 +71,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -256,7 +255,7 @@ public class PwmRequest extends PwmHttpRequestWrapper
     )
             throws IOException
     {
-        final String uri = getURLwithoutQueryString();
+        final String uri = getUrlWithoutQueryString();
         if ( uri == null || uri.length() < 1 )
         {
             return false;
@@ -473,7 +472,7 @@ public class PwmRequest extends PwmHttpRequestWrapper
     {
         return this.getClass().getSimpleName() + " "
                 + ( this.getLabel() == null ? "" : getLabel().toString() )
-                + " " + getURLwithoutQueryString();
+                + " " + getUrlWithoutQueryString();
 
     }
 
@@ -500,7 +499,7 @@ public class PwmRequest extends PwmHttpRequestWrapper
                 : new LinkedHashMap<>( formDataMap );
 
         this.setAttribute( PwmRequestAttribute.FormConfiguration, new ArrayList<>( formConfiguration ) );
-        this.setAttribute( PwmRequestAttribute.FormData, ( Serializable ) formDataMapValue );
+        this.setAttribute( PwmRequestAttribute.FormData, formDataMapValue );
         this.setAttribute( PwmRequestAttribute.FormReadOnly, readOnly );
         this.setAttribute( PwmRequestAttribute.FormShowPasswordFields, showPasswordFields );
     }
@@ -515,7 +514,7 @@ public class PwmRequest extends PwmHttpRequestWrapper
     public String getURLwithQueryString()
             throws PwmUnrecoverableException
     {
-        return PwmURL.appendAndEncodeUrlParameters( getURLwithoutQueryString(), readParametersAsMap() );
+        return PwmURL.appendAndEncodeUrlParameters( getUrlWithoutQueryString(), readParametersAsMap() );
     }
 
     public String getContextPath()

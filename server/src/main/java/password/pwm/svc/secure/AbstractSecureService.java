@@ -32,7 +32,7 @@ import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.CopyingInputStream;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.StatisticCounterBundle;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.json.JsonFactory;
@@ -44,9 +44,10 @@ import password.pwm.util.secure.PwmRandom;
 import password.pwm.util.secure.PwmSecurityKey;
 import password.pwm.util.secure.SecureEngine;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -99,15 +100,18 @@ public abstract class AbstractSecureService extends AbstractPwmService implement
 
         {
             final String defaultBlockAlgString = pwmApplication.getConfig().readAppProperty( AppProperty.SECURITY_DEFAULT_EPHEMERAL_BLOCK_ALG );
-            defaultBlockAlgorithm = JavaHelper.readEnumFromString( PwmBlockAlgorithm.class, PwmBlockAlgorithm.AES, defaultBlockAlgString );
+            defaultBlockAlgorithm = EnumUtil.readEnumFromString( PwmBlockAlgorithm.class, defaultBlockAlgString )
+                    .orElse( PwmBlockAlgorithm.AES );
         }
         {
             final String defaultHashAlgString = pwmApplication.getConfig().readAppProperty( AppProperty.SECURITY_DEFAULT_EPHEMERAL_HASH_ALG );
-            defaultHashAlgorithm = JavaHelper.readEnumFromString( PwmHashAlgorithm.class, PwmHashAlgorithm.SHA512, defaultHashAlgString );
+            defaultHashAlgorithm = EnumUtil.readEnumFromString( PwmHashAlgorithm.class, defaultHashAlgString )
+                    .orElse( PwmHashAlgorithm.SHA512 );
         }
         {
             final String defaultHmacAlgString = pwmApplication.getConfig().readAppProperty( AppProperty.SECURITY_DEFAULT_EPHEMERAL_HMAC_ALG );
-            defaultHmacAlgorithm = JavaHelper.readEnumFromString( HmacAlgorithm.class, HmacAlgorithm.HMAC_SHA_512, defaultHmacAlgString );
+            defaultHmacAlgorithm = EnumUtil.readEnumFromString( HmacAlgorithm.class, defaultHmacAlgString )
+                    .orElse( HmacAlgorithm.HMAC_SHA_512 );
         }
         LOGGER.debug( getSessionLabel(), () -> "using default algorithms: " + StringUtil.mapToString( debugData() ) );
 
@@ -172,20 +176,20 @@ public abstract class AbstractSecureService extends AbstractPwmService implement
     }
 
     @Override
-    public String encryptObjectToString( final Object serializableObject )
+    public String encryptObjectToString( final Object object )
             throws PwmUnrecoverableException
     {
-        final String jsonValue = JsonFactory.get().serialize( serializableObject );
+        final String jsonValue = JsonFactory.get().serialize( object );
         stats.increment( StatKey.encryptOperations );
         stats.increment( StatKey.encryptBytes, jsonValue.length() );
         return encryptToString( jsonValue );
     }
 
     @Override
-    public String encryptObjectToString( final Object serializableObject, final PwmSecurityKey securityKey )
+    public String encryptObjectToString( final Object object, final PwmSecurityKey securityKey )
             throws PwmUnrecoverableException
     {
-        final String jsonValue = JsonFactory.get().serialize( serializableObject );
+        final String jsonValue = JsonFactory.get().serialize( object );
         stats.increment( StatKey.encryptOperations );
         stats.increment( StatKey.encryptBytes, jsonValue.length() );
         return encryptToString( jsonValue, securityKey );
@@ -305,12 +309,12 @@ public abstract class AbstractSecureService extends AbstractPwmService implement
 
     @Override
     public String hash(
-            final File file
+            final Path file
     )
             throws IOException, PwmUnrecoverableException
     {
         stats.increment( StatKey.hashOperations );
-        stats.increment( StatKey.hashBytes, file.length() );
+        stats.increment( StatKey.hashBytes, Files.size( file ) );
         return SecureEngine.hash( file, defaultHashAlgorithm );
     }
 

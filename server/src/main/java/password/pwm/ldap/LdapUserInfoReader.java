@@ -61,6 +61,7 @@ import password.pwm.util.PasswordData;
 import password.pwm.util.form.FormUtility;
 import password.pwm.util.i18n.LocaleHelper;
 import password.pwm.util.java.CachingProxyWrapper;
+import password.pwm.util.java.JavaHelper;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
@@ -596,7 +597,7 @@ public class LdapUserInfoReader implements UserInfo
     @Override
     public String getUserGuid( ) throws PwmUnrecoverableException
     {
-        return LdapOperationsHelper.readLdapGuidValue( pwmDomain, sessionLabel, userIdentity, false );
+        return LdapOperationsHelper.readLdapGuidValue( pwmDomain, sessionLabel, userIdentity ).orElse( null );
     }
 
     @Override
@@ -798,7 +799,7 @@ public class LdapUserInfoReader implements UserInfo
             }
             catch ( final ChaiOperationException e )
             {
-                final String msg = "ldap operational error while reading user data" + e.getMessage();
+                final String msg = "ldap operational error while reading user data: " + JavaHelper.readHostileExceptionMessage( e );
                 LOGGER.error( sessionLabel, () -> msg );
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_LDAP_DATA_ERROR, msg ) );
             }
