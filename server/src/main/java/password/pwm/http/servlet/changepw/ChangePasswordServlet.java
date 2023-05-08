@@ -228,7 +228,7 @@ public abstract class ChangePasswordServlet extends ControlledPwmServlet
         }
 
         //make sure the two passwords match
-        final boolean caseSensitive = userInfo.getPasswordPolicy().getRuleHelper().readBooleanValue(
+        final boolean caseSensitive = userInfo.getPasswordPolicy().ruleHelper().readBooleanValue(
                 PwmPasswordRule.CaseSensitive );
         if ( PasswordUtility.PasswordCheckInfo.MatchStatus.MATCH != PasswordUtility.figureMatchStatus( caseSensitive,
                 password1, password2 ) )
@@ -589,14 +589,6 @@ public abstract class ChangePasswordServlet extends ControlledPwmServlet
 
     private void forwardToChangePage( final PwmRequest pwmRequest ) throws ServletException, PwmUnrecoverableException, IOException
     {
-        final Optional<String> passwordPolicyChangeMessage = pwmRequest.getPwmSession().getUserInfo().getPasswordPolicy().getChangeMessage( pwmRequest.getLocale() );
-        if ( passwordPolicyChangeMessage.isPresent() )
-        {
-            final MacroRequest macroRequest = pwmRequest.getMacroMachine( );
-            final String expandedMessage = macroRequest.expandMacros( passwordPolicyChangeMessage.get() );
-            pwmRequest.setAttribute( PwmRequestAttribute.ChangePassword_PasswordPolicyChangeMessage, expandedMessage );
-        }
-
         pwmRequest.forwardToJsp( JspUrl.PASSWORD_CHANGE );
     }
 }

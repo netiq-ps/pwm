@@ -42,7 +42,6 @@
         <checkstyle.skip>false</checkstyle.skip>
         <skipTests>false</skipTests>
         <owasp.skip>false</owasp.skip>
-        <jarsigner.skip>true</jarsigner.skip>
 
         <!-- git.commit.time is populated via git-commit-id-plugin and results in a (hopefully) reproducible maven build -->
         <project.build.outputTimestamp>${git.commit.time}</project.build.outputTimestamp>
@@ -79,12 +78,6 @@
             <id>enable-javadoc</id>
             <properties>
                 <maven.javadoc.skip>false</maven.javadoc.skip>
-            </properties>
-        </profile>
-        <profile>
-            <id>enable-jarsigner</id>
-            <properties>
-                <jarsigner.skip>false</jarsigner.skip>
             </properties>
         </profile>
         <profile>
@@ -149,7 +142,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.4.1</version>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <goals>
@@ -159,19 +152,25 @@
                         <configuration>
                             <notimestamp>true</notimestamp>
                             <archive>
+                                <manifest>
+                                    <addDefaultEntries>false</addDefaultEntries>
+                                    <addDefaultImplementationEntries>false</addDefaultImplementationEntries>
+                                </manifest>
                                 <manifestEntries>
-                                    <Implementation-Archive-Name>pwm.javadoc</Implementation-Archive-Name>
+                                    <Artifact-ID>${project.artifactId}</Artifact-ID>
                                     <Implementation-Title>${project.name}</Implementation-Title>
                                     <Implementation-Version>${project.version}</Implementation-Version>
                                     <Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
                                     <Implementation-URL>${project.organization.url}</Implementation-URL>
-                                    <Implementation-Build-Java-Spec-Version>${java.specification.version}</Implementation-Build-Java-Spec-Version>
+                                    <Implementation-Build-Java-Version>${maven.compiler.target}</Implementation-Build-Java-Version>
                                     <SCM-Git-Branch>${git.branch}</SCM-Git-Branch>
                                     <SCM-Git-Commit-ID>${git.commit.id}</SCM-Git-Commit-ID>
                                     <SCM-Git-Commit-ID-Abbrev>${git.commit.id.abbrev}</SCM-Git-Commit-ID-Abbrev>
                                     <SCM-Git-Commit-ID-Description>${git.commit.id.describe}</SCM-Git-Commit-ID-Description>
                                     <SCM-Git-Commit-Timestamp>${git.commit.time}</SCM-Git-Commit-Timestamp>
-                                    <SCM-Git-Commit-Dirty>${git.dirty}</SCM-Git-Commit-Dirty>                                </manifestEntries>
+                                    <SCM-Git-Commit-Dirty>${git.dirty}</SCM-Git-Commit-Dirty>
+                                    <SCM-Git-Remote-Origin-URL>${git.remote.origin.url}</SCM-Git-Remote-Origin-URL>
+                                </manifestEntries>
                             </archive>
                             <source>${maven.compiler.release}</source>
                         </configuration>
@@ -205,7 +204,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.10.1</version>
+                <version>3.11.0</version>
                 <configuration>
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
@@ -222,7 +221,7 @@
                     <dependency>
                         <groupId>com.puppycrawl.tools</groupId>
                         <artifactId>checkstyle</artifactId>
-                        <version>10.7.0</version>
+                        <version>10.9.3</version>
                     </dependency>
                 </dependencies>
                 <executions>
@@ -301,7 +300,7 @@
             <plugin>
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-maven-plugin</artifactId>
-                <version>4.7.3.0</version>
+                <version>4.7.3.3</version>
                 <dependencies>
                     <dependency>
                         <groupId>com.github.spotbugs</groupId>
@@ -364,7 +363,7 @@
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
-                <version>8.0.2</version>
+                <version>8.2.1</version>
                 <executions>
                     <execution>
                         <goals>
@@ -381,33 +380,6 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jarsigner-plugin</artifactId>
-                <version>3.0.0</version>
-                <executions>
-                    <execution>
-                        <id>sign</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>sign</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <skip>${jarsigner.skip}</skip>
-                    <keystore>${jarsigner.keystore}</keystore>
-                    <alias>${jarsigner.alias}</alias>
-                    <storepass>${jarsigner.storepass}</storepass>
-                    <keypass>${jarsigner.keypass}</keypass>
-                    <verbose>false</verbose>
-                    <removeExistingSignatures>true</removeExistingSignatures>
-                    <includes>
-                        <include>*.jar</include>
-                        <include>*.war</include>
-                    </includes>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <version>3.5.0</version>
             </plugin>
@@ -418,7 +390,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.0.0-M8</version>
+                    <version>3.0.0</version>
                     <executions>
                         <execution>
                             <id>default-test</id>
@@ -488,13 +460,13 @@
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>5.1.1</version>
+            <version>5.2.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.github.tomakehurst</groupId>
             <artifactId>wiremock</artifactId>
-            <version>3.0.0-beta-2</version>
+            <version>3.0.0-beta-6</version>
             <scope>test</scope>
         </dependency>
         <dependency>

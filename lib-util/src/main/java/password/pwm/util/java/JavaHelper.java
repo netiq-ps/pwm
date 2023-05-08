@@ -36,27 +36,33 @@ import java.io.Writer;
 import java.lang.management.LockInfo;
 import java.lang.management.MonitorInfo;
 import java.lang.management.ThreadInfo;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.atomic.LongAccumulator;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 public final class JavaHelper
 {
-    private static final char[] HEX_CHAR_ARRAY = "0123456789ABCDEF".toCharArray();
+    private static final HexFormat HEX_FORMAT = HexFormat.of().withUpperCase();
 
     private JavaHelper()
     {
@@ -64,13 +70,7 @@ public final class JavaHelper
 
     public static String binaryArrayToHex( final byte[] buf )
     {
-        final char[] chars = new char[2 * buf.length];
-        for ( int i = 0; i < buf.length; ++i )
-        {
-            chars[2 * i] = HEX_CHAR_ARRAY[( buf[i] & 0xF0 ) >>> 4];
-            chars[2 * i + 1] = HEX_CHAR_ARRAY[buf[i] & 0x0F];
-        }
-        return new String( chars );
+        return HEX_FORMAT.formatHex( buf );
     }
 
     public static String throwableToString( final Throwable throwable )
@@ -339,30 +339,26 @@ public final class JavaHelper
         return returnValue;
     }
 
-    public static <T> Optional<T> extractNestedExceptionType( final Exception inputException, final Class<T> exceptionType )
+    public static <T> Optional<T> extractNestedExceptionType( final Throwable inputException, final Class<T> exceptionType )
     {
         if ( inputException == null )
         {
             return Optional.empty();
         }
 
-        if ( inputException.getClass().isAssignableFrom( exceptionType ) )
+        if ( inputException.getClass().isInstance( exceptionType ) )
         {
             return Optional.of( ( T ) inputException );
         }
 
-        Throwable nextException = inputException.getCause();
-        while ( nextException != null )
-        {
-            if ( nextException.getClass().isAssignableFrom( exceptionType ) )
-            {
-                return Optional.of( ( T ) inputException );
-            }
+        final Throwable nextException = inputException.getCause();
 
-            nextException = nextException.getCause();
+        if ( nextException == null )
+        {
+            return Optional.empty();
         }
 
-        return Optional.empty();
+        return extractNestedExceptionType( nextException, exceptionType );
     }
 
     public static Map<String, String> propertiesToStringMap( final Properties properties )
@@ -504,5 +500,34 @@ public final class JavaHelper
     {
         final long next = input + 1;
         return next > 0 ? next : 0;
+    }
+    
+    public static <T> List<T> instancesOfSealedInterface( final Class<T> sealedInterface )
+    {
+        if ( !Objects.requireNonNull( sealedInterface ).isSealed() )
+        {
+            throw new IllegalArgumentException( "sealedInterface argument is required to be marked as sealed" );
+        }
+
+        final Function<Class<T>, T> f = theClass ->
+        {
+            try
+            {
+                final Constructor<T> constructor = theClass.getDeclaredConstructor();
+                constructor.setAccessible( true );
+                return ( T ) constructor.newInstance();
+            }
+            catch ( final InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e )
+            {
+                throw new RuntimeException( e );
+            }
+        };
+
+        final List<T> list = new ArrayList<>();
+        for ( final Class<?> loopClass : sealedInterface.getPermittedSubclasses() )
+        {
+            list.add( f.apply( (Class<T> ) loopClass ) );
+        }
+        return List.copyOf( list );
     }
 }

@@ -16,7 +16,7 @@
     <name>PWM Password Self Service: Executable Server JAR</name>
 
     <properties>
-        <tomcat.version>9.0.71</tomcat.version>
+        <tomcat.version>9.0.73</tomcat.version>
     </properties>
 
     <build>
@@ -40,30 +40,32 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.4.2</version>
+                <version>3.5.0</version>
                 <configuration>
                     <appendAssemblyId>false</appendAssemblyId>
                     <descriptors>
                         <descriptor>onejar-assembly.xml</descriptor>
                     </descriptors>
                     <archive>
+                        <manifest>
+                            <addDefaultEntries>false</addDefaultEntries>
+                            <addDefaultImplementationEntries>false</addDefaultImplementationEntries>
+                        </manifest>
                         <manifestEntries>
                             <Main-Class>password.pwm.onejar.OnejarMain</Main-Class>
-                            <Implementation-Archive-Name>pwm.onejar</Implementation-Archive-Name>
+                            <Artifact-ID>${project.artifactId}</Artifact-ID>
                             <Implementation-Title>${project.name}</Implementation-Title>
                             <Implementation-Version>${project.version}</Implementation-Version>
                             <Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
                             <Implementation-URL>${project.organization.url}</Implementation-URL>
-                            <Implementation-Build>${build.number}</Implementation-Build>
-                            <Implementation-Revision>${build.revision}</Implementation-Revision>
-                            <Implementation-Version-Display>v${project.version} b${build.number} r${build.revision}</Implementation-Version-Display>
-                            <Implementation-Build-Java-Spec-Version>${java.specification.version}</Implementation-Build-Java-Spec-Version>
+                            <Implementation-Build-Java-Version>${maven.compiler.target}</Implementation-Build-Java-Version>
                             <SCM-Git-Branch>${git.branch}</SCM-Git-Branch>
                             <SCM-Git-Commit-ID>${git.commit.id}</SCM-Git-Commit-ID>
                             <SCM-Git-Commit-ID-Abbrev>${git.commit.id.abbrev}</SCM-Git-Commit-ID-Abbrev>
                             <SCM-Git-Commit-ID-Description>${git.commit.id.describe}</SCM-Git-Commit-ID-Description>
                             <SCM-Git-Commit-Timestamp>${git.commit.time}</SCM-Git-Commit-Timestamp>
                             <SCM-Git-Commit-Dirty>${git.dirty}</SCM-Git-Commit-Dirty>
+                            <SCM-Git-Remote-Origin-URL>${git.remote.origin.url}</SCM-Git-Remote-Origin-URL>
                         </manifestEntries>
                     </archive>
                 </configuration>

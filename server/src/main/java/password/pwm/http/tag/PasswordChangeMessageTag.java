@@ -20,24 +20,20 @@
 
 package password.pwm.http.tag;
 
+import password.pwm.config.profile.PwmPasswordPolicy;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmRequest;
-import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
+import password.pwm.util.macro.MacroRequest;
+
+import java.util.Optional;
 
 /**
  * @author Jason D. Rivard
  */
-public class UserInfoTag extends PwmAbstractTag
+public class PasswordChangeMessageTag extends PwmAbstractTag
 {
-    private static final PwmLogger LOGGER = PwmLogger.forClass( UserInfoTag.class );
-
-    private String attribute;
-
-    public void setAttribute( final String attribute )
-    {
-        this.attribute = attribute;
-    }
+    private static final PwmLogger LOGGER = PwmLogger.forClass( PasswordChangeMessageTag.class );
 
     @Override
     protected PwmLogger getLogger()
@@ -49,16 +45,16 @@ public class UserInfoTag extends PwmAbstractTag
     protected String generateTagBodyContents( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException
     {
-        if ( pwmRequest.isAuthenticated() )
-        {
-            final String ldapValue = pwmRequest.getPwmSession().getUserInfo()
-                    .readStringAttribute( attribute );
+        final PwmPasswordPolicy pwmPasswordPolicy = PasswordRequirementsTag.readPasswordPolicy( pwmRequest );
+        final Optional<String> passwordPolicyChangeMessage = pwmPasswordPolicy.getChangeMessage( pwmRequest.getLocale() );
 
-            return StringUtil.escapeHtml( ldapValue == null ? "" : ldapValue );
+        if ( passwordPolicyChangeMessage.isPresent() )
+        {
+            final MacroRequest macroRequest = pwmRequest.getMacroMachine( );
+            return macroRequest.expandMacros( passwordPolicyChangeMessage.get() );
         }
 
         return "";
     }
-
 }
 

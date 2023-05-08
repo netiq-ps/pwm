@@ -212,6 +212,10 @@ html[dir="rtl"] table td.key {
     display: none;
 }
 
+.noopacity {
+    opacity: 0;
+}
+
 /* disable ie password reveal */
 input[type=password]::-ms-reveal {
     display: none;
@@ -781,6 +785,7 @@ html[dir="rtl"] #header-center-right {
     overflow: auto;
     font-family: monospace;
     white-space: pre-wrap;
+    height: 400px;
 }
 
 /* hide recaptcha iframe near footer */
@@ -879,6 +884,14 @@ select {
     float: right;
 }
 
+.locale-select-table {
+    width: auto;
+    margin-right: auto;
+    margin-left: auto;
+    overflow-x: scroll;
+    cursor: pointer;
+}
+
 #localeSelectionMenu {
     white-space: nowrap;
     cursor: pointer;
@@ -954,6 +967,10 @@ input[type=search] {
     font-size: 13px;
 }
 
+.formFieldDescription {
+    margin: 5px;
+}
+
 .formFieldLabel {
     font-size: 13px;
     font-weight: bold;
@@ -1009,6 +1026,11 @@ input[type=search] {
     padding-bottom: 10px;
 }
 
+.formFieldRequiredAsterisk {
+    font-style: italic;
+    font-size: smaller;
+}
+
 .headerProgressBar {
     width: 600px;
     padding: 5px;
@@ -1022,12 +1044,17 @@ input[type=search] {
 progress:not([value]) {
     width: 100%;
     height: 20px;
+    transition: all 1s;
 }
 
 progress[value] {
     height: 20px;
     width: 100%;
     color: orange;
+}
+
+progress::-webkit-progress-value {
+    transition: all 1s;
 }
 
 .blink {
@@ -1112,6 +1139,7 @@ dialog {
     border-radius: 3px;
     padding: 0;
     max-width: 100%;
+    z-index: 3;
 }
 
 dialog .titleBar {
@@ -1387,10 +1415,6 @@ dialog .closeIcon {
     text-align: center;
 }
 
-.display-none {
-    display: none;
-}
-
 #header-menu-icon::after {
     content: "\f141";
     font: 12px FontAwesome;
@@ -1476,14 +1500,6 @@ dialog .closeIcon {
     z-index: 1002;
 }
 
-html[dir="rtl"] .nihilo .dijitTabContainerTop-tabs {
-    text-align: right;
-}
-
-html[dir="rtl"] .nihilo .dijitTabContainerTop-tabs > .dijitTabContent:first-child {
-    margin-right: 10px;
-}
-
 @keyframes wait-fadein {
     0% {
         opacity: 0
@@ -1556,14 +1572,72 @@ html[dir="rtl"] .errorDetail {
     direction: ltr;
     text-align: right;
     unicode-bidi: bidi-override;
+    max-height: 250px;
+    overflow-y: auto
 }
 
 html[dir="rtl"] .message.message-error .errorDetail {
     display: inline-block;
+    max-height: 250px;
+    overflow-y: auto
+}
+
+.pwm-icon-button {
+    cursor: pointer;
 }
 
 #strengthLabel {
     white-space: nowrap;
+    margin: 0;
+}
+
+#strength-tooltip-icon {
+    display: inline-block;
+}
+
+#strengthLabelText {
+    display: inline-block;
+}
+
+#strengthBox {
+    display: inline-block;
+    vertical-align: top;
+    margin-left: 10px;
+    min-width: 140px;
+    transition: opacity 0.5s linear;
+}
+
+#passwordStrengthProgress {
+    display: block;
+    left: 0;
+    height: 12px;
+    width: 100px;
+    border: 1px solid #697374;
+}
+
+#passwordStrengthProgress::-webkit-progress-bar {
+    border-radius: 0;
+    background-color: white;
+}
+
+#passwordStrengthProgress::-webkit-progress-value {
+    border-radius: 0;
+    transition: all 1s;
+}
+#passwordStrengthProgress[data-strength="VeryLow"]::-webkit-progress-value{
+    background: linear-gradient(to right, rgba(200, 25, 62, .1), rgba(200, 25, 62, 1));
+}
+#passwordStrengthProgress[data-strength="Low"]::-webkit-progress-value{
+    background: linear-gradient(to right, rgba(177, 107, 62, .1), rgba(177, 107, 62, 1));
+}
+#passwordStrengthProgress[data-strength="Medium"]::-webkit-progress-value{
+    background: linear-gradient(to right, rgba(170, 124, 62, .1), rgba(170, 124, 62, 1));
+}
+#passwordStrengthProgress[data-strength="High"]::-webkit-progress-value{
+    background: linear-gradient(to right, rgba(163, 154, 62, .1), rgba(163, 154, 62, 1));
+}
+#passwordStrengthProgress[data-strength="VeryHigh"]::-webkit-progress-value{
+    background: linear-gradient(to right, rgba(140, 237, 63, .1), rgba(140, 237, 63, 1));
 }
 
 /*** TABS ****/
@@ -1786,4 +1860,27 @@ table.ias-table, table.ias-table td {
 
 .pre-whitespace {
     white-space: pre;
+}
+
+#confirmMarkBox {
+    display: inline-block;
+    vertical-align: top;
+    margin-left: 10px;
+    margin-top: 10px;
+    min-width: 140px;
+    transition: opacity 0.5s linear;
+}
+
+.confirmCheckMark {
+    background-image: url("greenCheck.png");
+    background-size: cover;
+    width: 15px;
+    height: 15px;
+}
+
+.confirmCrossMark {
+    background-image: url("redX.png");
+    background-size: cover;
+    width: 15px;
+    height: 15px;
 }

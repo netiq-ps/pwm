@@ -22,22 +22,12 @@ package password.pwm.http.tag;
 
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmRequest;
-import password.pwm.util.java.StringUtil;
+import password.pwm.http.PwmRequestAttribute;
 import password.pwm.util.logging.PwmLogger;
 
-/**
- * @author Jason D. Rivard
- */
-public class UserInfoTag extends PwmAbstractTag
+public class PwmTabIndexTag extends PwmAbstractTag
 {
-    private static final PwmLogger LOGGER = PwmLogger.forClass( UserInfoTag.class );
-
-    private String attribute;
-
-    public void setAttribute( final String attribute )
-    {
-        this.attribute = attribute;
-    }
+    private static final PwmLogger LOGGER = PwmLogger.forClass( PwmTabIndexTag.class );
 
     @Override
     protected PwmLogger getLogger()
@@ -49,16 +39,9 @@ public class UserInfoTag extends PwmAbstractTag
     protected String generateTagBodyContents( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException
     {
-        if ( pwmRequest.isAuthenticated() )
-        {
-            final String ldapValue = pwmRequest.getPwmSession().getUserInfo()
-                    .readStringAttribute( attribute );
-
-            return StringUtil.escapeHtml( ldapValue == null ? "" : ldapValue );
-        }
-
-        return "";
+        final Integer currentCounter = (Integer) pwmRequest.getAttribute( PwmRequestAttribute.JspIndexTabCounter );
+        final int nextCounter = currentCounter == null ? 1 : currentCounter + 1;
+        pwmRequest.setAttribute( PwmRequestAttribute.JspIndexTabCounter, nextCounter );
+        return String.valueOf( nextCounter );
     }
-
 }
-
