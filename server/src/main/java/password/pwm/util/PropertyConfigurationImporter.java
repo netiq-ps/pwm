@@ -162,19 +162,22 @@ public class PropertyConfigurationImporter
                 new StringArrayValue( Collections.singletonList( inputMap.get( PropertyKey.USER_CONTAINER.name( ) ) ) ) );
 
         // oauth
-        modifySetting( modifier, PwmSetting.OAUTH_ID_LOGIN_URL, null, new StringValue( makeOAuthBaseUrl( ) + "/grant" ) );
-        modifySetting( modifier, PwmSetting.OAUTH_ID_CODERESOLVE_URL, null, new StringValue( makeOAuthBaseUrl( ) + "/authcoderesolve" ) );
-        modifySetting( modifier, PwmSetting.OAUTH_ID_ATTRIBUTES_URL, null, new StringValue( makeOAuthBaseUrl( ) + "/getattributes" ) );
-        modifySetting( modifier, PwmSetting.OAUTH_ID_CLIENTNAME, null, new StringValue( "sspr" ) );
-        modifySetting( modifier, PwmSetting.OAUTH_ID_DN_ATTRIBUTE_NAME, null, new StringValue( "name" ) );
-        modifySetting( modifier, PwmSetting.OAUTH_ID_SECRET, null,
-                new PasswordValue( PasswordData.forStringValue( inputMap.get( PropertyKey.SSO_SERVICE_PWD.name( ) ) ) ) );
+        if ( inputMap.containsKey( PropertyKey.SSO_SERVER_HOST.name( ) ) && inputMap.containsKey( PropertyKey.SSO_SERVICE_PWD.name( ) ) )
+        {
+            modifySetting( modifier, PwmSetting.OAUTH_ID_LOGIN_URL, null, new StringValue( makeOAuthBaseUrl( ) + "/grant" ) );
+            modifySetting( modifier, PwmSetting.OAUTH_ID_CODERESOLVE_URL, null, new StringValue( makeOAuthBaseUrl( ) + "/authcoderesolve" ) );
+            modifySetting( modifier, PwmSetting.OAUTH_ID_ATTRIBUTES_URL, null, new StringValue( makeOAuthBaseUrl( ) + "/getattributes" ) );
+            modifySetting( modifier, PwmSetting.OAUTH_ID_CLIENTNAME, null, new StringValue( "sspr" ) );
+            modifySetting( modifier, PwmSetting.OAUTH_ID_DN_ATTRIBUTE_NAME, null, new StringValue( "name" ) );
+            modifySetting( modifier, PwmSetting.OAUTH_ID_SECRET, null,
+                    new PasswordValue( PasswordData.forStringValue( inputMap.get( PropertyKey.SSO_SERVICE_PWD.name( ) ) ) ) );
+            modifySetting( modifier, PwmSetting.URL_LOGOUT, null, makeLogoutUrl( ) );
+            modifySetting( modifier, PwmSetting.SECURITY_REDIRECT_WHITELIST, null, makeWhitelistUrl( ) );
+        }
 
         //urls
         modifySetting( modifier, PwmSetting.URL_FORWARD, null, makeForwardUrl( ) );
-        modifySetting( modifier, PwmSetting.URL_LOGOUT, null, makeLogoutUrl( ) );
         modifySetting( modifier, PwmSetting.PWM_SITE_URL, null, makeSelfUrl( ) );
-        modifySetting( modifier, PwmSetting.SECURITY_REDIRECT_WHITELIST, null, makeWhitelistUrl( ) );
 
         // admin settings
         modifySetting( modifier, PwmSetting.QUERY_MATCH_PWM_ADMIN, null, makeAdminPermissions( ) );
