@@ -27,6 +27,7 @@ import com.novell.ldapchai.cr.ChallengeSet;
 import com.novell.ldapchai.exception.ChaiValidationException;
 import password.pwm.PwmConstants;
 import password.pwm.bean.DomainID;
+import password.pwm.bean.ProfileID;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.StoredSettingReader;
 import password.pwm.config.stored.StoredConfiguration;
@@ -37,17 +38,17 @@ import password.pwm.error.PwmError;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
-public class ChallengeProfile implements Profile, Serializable
+public class ChallengeProfile implements Profile
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( ChallengeProfile.class );
 
-    private final String profileID;
+    private final ProfileID profileID;
     private final Locale locale;
     private final ChallengeSet challengeSet;
     private final ChallengeSet helpdeskChallengeSet;
@@ -56,7 +57,7 @@ public class ChallengeProfile implements Profile, Serializable
     private final List<UserPermission> userPermissions;
 
     private ChallengeProfile(
-            final String profileID,
+            final ProfileID profileID,
             final Locale locale,
             final ChallengeSet challengeSet,
             final ChallengeSet helpdeskChallengeSet,
@@ -76,7 +77,7 @@ public class ChallengeProfile implements Profile, Serializable
 
     public static ChallengeProfile readChallengeProfileFromConfig(
             final DomainID domainID,
-            final String profileID,
+            final ProfileID profileID,
             final Locale locale,
             final StoredConfiguration storedConfiguration
     )
@@ -126,7 +127,7 @@ public class ChallengeProfile implements Profile, Serializable
     }
 
     public static ChallengeProfile createChallengeProfile(
-            final String profileID,
+            final ProfileID profileID,
             final Locale locale,
             final ChallengeSet challengeSet,
             final ChallengeSet helpdeskChallengeSet,
@@ -138,7 +139,7 @@ public class ChallengeProfile implements Profile, Serializable
     }
 
     @Override
-    public String getIdentifier( )
+    public ProfileID getId( )
     {
         return profileID;
     }
@@ -146,7 +147,7 @@ public class ChallengeProfile implements Profile, Serializable
     @Override
     public String getDisplayName( final Locale locale )
     {
-        return getIdentifier();
+        return getId().stringValue();
     }
 
     public Locale getLocale( )
@@ -154,14 +155,14 @@ public class ChallengeProfile implements Profile, Serializable
         return locale;
     }
 
-    public ChallengeSet getChallengeSet( )
+    public Optional<ChallengeSet> getChallengeSet( )
     {
-        return challengeSet;
+        return Optional.ofNullable( challengeSet );
     }
 
-    public ChallengeSet getHelpdeskChallengeSet( )
+    public Optional<ChallengeSet> getHelpdeskChallengeSet( )
     {
-        return helpdeskChallengeSet;
+        return Optional.ofNullable( helpdeskChallengeSet );
     }
 
     public int getMinRandomSetup( )
@@ -264,5 +265,15 @@ public class ChallengeProfile implements Profile, Serializable
     public List<UserPermission> profilePermissions( )
     {
         throw new UnsupportedOperationException();
+    }
+
+    public boolean hasChallenges()
+    {
+        return !getChallengeSet().map( ChallengeSet::getChallenges ).orElseGet( Collections::emptyList ).isEmpty();
+    }
+
+    public boolean hasHelpdeskChallenges()
+    {
+        return !getHelpdeskChallengeSet().map( ChallengeSet::getChallenges ).orElseGet( Collections::emptyList ).isEmpty();
     }
 }

@@ -20,17 +20,16 @@
 
 package password.pwm.config.value;
 
+import org.jrivard.xmlchai.XmlElement;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.stored.XmlOutputProcessData;
 import password.pwm.error.PwmException;
-import password.pwm.util.java.XmlElement;
 import password.pwm.util.secure.PwmSecurityKey;
 
-import java.io.Serializable;
 import java.util.List;
 import java.util.Locale;
 
-public interface StoredValue extends Serializable
+public interface StoredValue
 {
     List<XmlElement> toXmlValues( String valueElementName, XmlOutputProcessData xmlOutputProcessData );
 
@@ -38,7 +37,7 @@ public interface StoredValue extends Serializable
 
     List<String> validateValue( PwmSetting pwm );
 
-    Serializable toDebugJsonObject( Locale locale );
+    Object toDebugJsonObject( Locale locale );
 
     String toDebugString( Locale locale );
 
@@ -46,7 +45,7 @@ public interface StoredValue extends Serializable
 
     interface StoredValueFactory
     {
-        StoredValue fromJson( String input );
+        StoredValue fromJson( PwmSetting pwmSetting, String input );
 
         StoredValue fromXmlElement( PwmSetting pwmSetting, XmlElement settingElement, PwmSecurityKey key )
                 throws PwmException;

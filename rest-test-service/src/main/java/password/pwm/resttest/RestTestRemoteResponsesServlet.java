@@ -31,7 +31,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +59,7 @@ public class RestTestRemoteResponsesServlet extends HttpServlet
         if ( requestData.getUserResponses() != null
             && requestData.getUserResponses().size() > 0
             && requestData.getUserResponses().containsKey( "id1" )
-            && requestData.getUserResponses().get( "id1" ).equalsIgnoreCase( "answer1" ) )
+            && "answer1".equalsIgnoreCase( requestData.getUserResponses().get( "id1" ) ) )
         {
             correct = true;
         }
@@ -79,7 +78,7 @@ public class RestTestRemoteResponsesServlet extends HttpServlet
     }
 
     @Value
-    public static class RequestData implements Serializable
+    public static class RequestData
     {
         private final String responseSessionID;
         private final Map<String, String> userResponses;
@@ -87,7 +86,7 @@ public class RestTestRemoteResponsesServlet extends HttpServlet
 
     @Value
     @Builder
-    public static class ResponseData implements Serializable
+    public static class ResponseData
     {
         private final String displayInstructions;
         private final String verificationState;
@@ -97,7 +96,7 @@ public class RestTestRemoteResponsesServlet extends HttpServlet
     }
 
     @Value
-    public static class Prompt implements Serializable
+    public static class Prompt
     {
         private final String displayPrompt;
         private final String identifier;

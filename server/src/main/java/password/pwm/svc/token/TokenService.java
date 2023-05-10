@@ -49,7 +49,7 @@ import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.health.HealthMessage;
 import password.pwm.health.HealthRecord;
 import password.pwm.http.PwmRequestContext;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.ldap.auth.SessionAuthenticator;
 import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
@@ -61,15 +61,15 @@ import password.pwm.svc.event.AuditRecordFactory;
 import password.pwm.svc.event.AuditServiceClient;
 import password.pwm.svc.intruder.IntruderRecordType;
 import password.pwm.svc.intruder.IntruderServiceClient;
+import password.pwm.svc.sms.SmsQueueService;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.util.DataStore;
-import password.pwm.util.PwmScheduler;
-import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StatisticCounterBundle;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBDataStore;
 import password.pwm.util.logging.PwmLogger;
@@ -82,8 +82,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
 
 /**
  * This PWM service is responsible for reading/writing tokens used for forgotten password,
@@ -94,10 +92,7 @@ import java.util.concurrent.ExecutorService;
  */
 public class TokenService extends AbstractPwmService implements PwmService
 {
-
     private static final PwmLogger LOGGER = PwmLogger.forClass( TokenService.class );
-
-    private ExecutorService executorService;
 
     private PwmDomain pwmDomain;
     private DomainConfig domainConfig;
@@ -203,7 +198,7 @@ public class TokenService extends AbstractPwmService implements PwmService
                     break;
 
                 default:
-                    JavaHelper.unhandledSwitchStatement( storageMethod );
+                    PwmUtil.unhandledSwitchStatement( storageMethod );
             }
             dataStorageMethod = usedStorageMethod;
         }
@@ -218,15 +213,6 @@ public class TokenService extends AbstractPwmService implements PwmService
         }
 
         verifyPwModifyTime = Boolean.parseBoolean( domainConfig.readAppProperty( AppProperty.TOKEN_VERIFY_PW_MODIFY_TIME ) );
-
-        executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, this.getClass() );
-
-        {
-            final int cleanerFrequencySeconds = Integer.parseInt( domainConfig.readAppProperty( AppProperty.TOKEN_CLEANER_INTERVAL_SECONDS ) );
-            final TimeDuration cleanerFrequency = TimeDuration.of( cleanerFrequencySeconds, TimeDuration.Unit.SECONDS );
-            pwmApplication.getPwmScheduler().scheduleFixedRateJob( new CleanerTask(), executorService, TimeDuration.MINUTE, cleanerFrequency );
-            LOGGER.trace( getSessionLabel(), () -> "token cleanup will occur every " + cleanerFrequency.asCompactString() );
-        }
 
         LOGGER.debug( getSessionLabel(), () -> "open" );
 
@@ -262,7 +248,7 @@ public class TokenService extends AbstractPwmService implements PwmService
                 AuditEvent.TOKEN_ISSUED,
                 tokenPayload.getUserIdentity(),
                 sessionLabel,
-                JsonUtil.serialize( tokenPayload )
+                JsonFactory.get().serialize( tokenPayload )
         );
 
         stats.increment( StatsKey.tokensIssued );
@@ -302,7 +288,7 @@ public class TokenService extends AbstractPwmService implements PwmService
                 AuditEvent.TOKEN_CLAIMED,
                 tokenPayload.getUserIdentity(),
                 sessionLabel,
-                JsonUtil.serialize( tokenPayload )
+                JsonFactory.get().serialize( tokenPayload )
         );
         AuditServiceClient.submit( pwmDomain.getPwmApplication(), sessionLabel, auditRecord );
 
@@ -342,13 +328,9 @@ public class TokenService extends AbstractPwmService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         setStatus( STATUS.CLOSED );
-        if ( executorService != null )
-        {
-            executorService.shutdown();
-        }
     }
 
     @Override
@@ -372,13 +354,13 @@ public class TokenService extends AbstractPwmService implements PwmService
                 {
                     if ( newUserProfile.readSettingAsBoolean( PwmSetting.NEWUSER_EMAIL_VERIFICATION ) )
                     {
-                        final String label = PwmSetting.NEWUSER_EMAIL_VERIFICATION.toMenuLocationDebug( newUserProfile.getIdentifier(), PwmConstants.DEFAULT_LOCALE );
+                        final String label = PwmSetting.NEWUSER_EMAIL_VERIFICATION.toMenuLocationDebug( newUserProfile.getId(), PwmConstants.DEFAULT_LOCALE );
                         final String label2 = PwmSetting.TOKEN_STORAGEMETHOD.toMenuLocationDebug( null, PwmConstants.DEFAULT_LOCALE );
                         returnRecords.add( HealthRecord.forMessage( DomainID.systemId(), HealthMessage.CryptoTokenWithNewUserVerification, label, label2 ) );
                     }
                     if ( newUserProfile.readSettingAsBoolean( PwmSetting.NEWUSER_SMS_VERIFICATION ) )
                     {
-                        final String label = PwmSetting.NEWUSER_SMS_VERIFICATION.toMenuLocationDebug( newUserProfile.getIdentifier(), PwmConstants.DEFAULT_LOCALE );
+                        final String label = PwmSetting.NEWUSER_SMS_VERIFICATION.toMenuLocationDebug( newUserProfile.getId(), PwmConstants.DEFAULT_LOCALE );
                         final String label2 = PwmSetting.TOKEN_STORAGEMETHOD.toMenuLocationDebug( null, PwmConstants.DEFAULT_LOCALE );
                         returnRecords.add( HealthRecord.forMessage( DomainID.systemId(), HealthMessage.CryptoTokenWithNewUserVerification, label, label2 ) );
                     }
@@ -418,19 +400,15 @@ public class TokenService extends AbstractPwmService implements PwmService
         return random.alphaNumericString( randomChars, codeLength );
     }
 
-    private class CleanerTask extends TimerTask
+    void cleanup()
     {
-        @Override
-        public void run( )
+        try
         {
-            try
-            {
-                tokenMachine.cleanup();
-            }
-            catch ( final Exception e )
-            {
-                LOGGER.warn( getSessionLabel(), () -> "unexpected error while cleaning expired stored tokens: " + e.getMessage() );
-            }
+            tokenMachine.cleanup();
+        }
+        catch ( final Exception e )
+        {
+            LOGGER.warn( getSessionLabel(), () -> "unexpected error while cleaning expired stored tokens: " + e.getMessage() );
         }
     }
 
@@ -521,7 +499,7 @@ public class TokenService extends AbstractPwmService implements PwmService
             }
         }
 
-        if ( domainConfig.readSettingAsBoolean( PwmSetting.CHALLENGE_ENABLE ) )
+        if ( domainConfig.readSettingAsBoolean( PwmSetting.SETUP_RESPONSE_ENABLE ) )
         {
             for ( final ForgottenPasswordProfile forgottenPasswordProfile : domainConfig.getForgottenPasswordProfiles().values() )
             {
@@ -538,7 +516,7 @@ public class TokenService extends AbstractPwmService implements PwmService
     String toEncryptedString( final TokenPayload tokenPayload )
             throws PwmUnrecoverableException, PwmOperationalException
     {
-        final String jsonPayload = JsonUtil.serialize( tokenPayload );
+        final String jsonPayload = JsonFactory.get().serialize( tokenPayload );
         return pwmDomain.getSecureService().encryptToString( jsonPayload );
     }
 
@@ -549,7 +527,7 @@ public class TokenService extends AbstractPwmService implements PwmService
         try
         {
             final String decryptedString = pwmDomain.getSecureService().decryptStringValue( deWhiteSpacedToken );
-            return JsonUtil.deserialize( decryptedString, TokenPayload.class );
+            return JsonFactory.get().deserialize( decryptedString, TokenPayload.class );
         }
         catch ( final PwmUnrecoverableException e )
         {
@@ -563,7 +541,7 @@ public class TokenService extends AbstractPwmService implements PwmService
     public ServiceInfoBean serviceInfo( )
     {
         return ServiceInfoBean.builder()
-                .debugProperties( stats.debugStats() )
+                .debugProperties( stats.debugStats( PwmConstants.DEFAULT_LOCALE ) )
                 .storageMethod( dataStorageMethod )
                 .build();
     }
@@ -685,13 +663,13 @@ public class TokenService extends AbstractPwmService implements PwmService
                 LOGGER.trace( sessionLabel, () -> "tokenPayload=" + tokenPayload.toDebugString()
                         + ", sessionUser=" + ( sessionUserIdentity == null ? "null" : sessionUserIdentity.toDisplayString() )
                         + ", payloadUserIdentity=" + tokenPayload.getUserIdentity().toDisplayString()
-                        + ", userLastPasswordChange=" + JavaHelper.toIsoDate( userLastPasswordChange )
+                        + ", userLastPasswordChange=" + StringUtil.toIsoDate( userLastPasswordChange )
                         + ", dateStringInToken=" + dateStringInToken );
 
                 if ( userLastPasswordChange != null && dateStringInToken != null )
                 {
 
-                    final String userChangeString = JavaHelper.toIsoDate( userLastPasswordChange );
+                    final String userChangeString = StringUtil.toIsoDate( userLastPasswordChange );
 
                     if ( !dateStringInToken.equalsIgnoreCase( userChangeString ) )
                     {
@@ -806,7 +784,7 @@ public class TokenService extends AbstractPwmService implements PwmService
             final PwmDomain pwmDomain = tokenSendInfo.getPwmDomain();
             pwmDomain.getIntruderService().mark( IntruderRecordType.TOKEN_DEST, smsNumber, tokenSendInfo.getSessionLabel() );
 
-            pwmDomain.getPwmApplication().sendSmsUsingQueue( smsNumber, modifiedMessage, tokenSendInfo.getSessionLabel(), tokenSendInfo.getMacroRequest() );
+            SmsQueueService.sendSmsUsingQueue( pwmDomain.getPwmApplication(), smsNumber, modifiedMessage, tokenSendInfo.getSessionLabel(), tokenSendInfo.getMacroRequest() );
             LOGGER.debug( tokenSendInfo.getSessionLabel(), () -> "token SMS added to send queue for " + smsNumber );
             return true;
         }

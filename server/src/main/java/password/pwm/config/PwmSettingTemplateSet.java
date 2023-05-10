@@ -22,32 +22,29 @@ package password.pwm.config;
 
 import lombok.Value;
 import password.pwm.util.java.CollectionUtil;
+import password.pwm.util.java.EnumUtil;
 
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 @Value
-public class PwmSettingTemplateSet implements Serializable
+public class PwmSettingTemplateSet
 {
     private final Set<PwmSettingTemplate> templates;
 
     public PwmSettingTemplateSet( final Set<PwmSettingTemplate> templates )
     {
-        final Set<PwmSettingTemplate> workingSet = CollectionUtil.copiedEnumSet( templates, PwmSettingTemplate.class );
+        final Set<PwmSettingTemplate> workingSet = CollectionUtil.copyToEnumSet( templates, PwmSettingTemplate.class );
 
         final Set<PwmSettingTemplate.Type> seenTypes = workingSet.stream()
                 .map( PwmSettingTemplate::getType )
                 .collect( Collectors.toSet() );
 
-        workingSet.addAll( Arrays.stream( PwmSettingTemplate.Type.values() )
+        workingSet.addAll( EnumUtil.enumStream( PwmSettingTemplate.Type.class )
                 .filter( type -> !seenTypes.contains( type ) )
                 .map( PwmSettingTemplate.Type::getDefaultValue )
-                .collect( Collectors.toSet( ) ) );
+                .collect( Collectors.toUnmodifiableSet( ) ) );
 
         this.templates = Set.copyOf( workingSet );
     }
@@ -73,15 +70,8 @@ public class PwmSettingTemplateSet implements Serializable
      */
     public static List<PwmSettingTemplateSet> allValues()
     {
-        final List<PwmSettingTemplateSet> templateSets = new ArrayList<>();
-
-        for ( final PwmSettingTemplate template : PwmSettingTemplate.values() )
-        {
-            final PwmSettingTemplateSet templateSet = new PwmSettingTemplateSet( Collections.singleton( template ) );
-            templateSets.add( templateSet );
-        }
-
-        templateSets.add( getDefault() );
-        return Collections.unmodifiableList( templateSets );
+        return EnumUtil.enumStream( PwmSettingTemplate.class )
+                .map( pwmSettingTemplate -> new PwmSettingTemplateSet( Set.of( pwmSettingTemplate ) ) )
+                .collect( Collectors.toUnmodifiableList() );
     }
 }

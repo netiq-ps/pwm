@@ -27,19 +27,17 @@ import password.pwm.AppProperty;
 import password.pwm.config.AppConfig;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.value.FileValue;
-import password.pwm.http.bean.ImmutableByteArray;
+import password.pwm.data.ImmutableByteArray;
 import password.pwm.util.PasswordData;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.StringUtil;
 
-import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 
 @Value
 @AllArgsConstructor( access = AccessLevel.PRIVATE )
-public class DBConfiguration implements Serializable
+public class DBConfiguration
 {
     private final String driverClassname;
     private final String connectionString;
@@ -57,15 +55,6 @@ public class DBConfiguration implements Serializable
     public ImmutableByteArray getJdbcDriver( )
     {
         return jdbcDriver;
-    }
-
-    public boolean isEnabled( )
-    {
-        return
-                StringUtil.notEmpty( driverClassname )
-                        && StringUtil.notEmpty( connectionString )
-                        && StringUtil.notEmpty( username )
-                        && !( password == null );
     }
 
     static DBConfiguration fromConfiguration( final AppConfig config )

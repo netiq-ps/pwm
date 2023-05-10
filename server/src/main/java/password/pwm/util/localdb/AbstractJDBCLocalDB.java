@@ -27,8 +27,7 @@ import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 
 import java.io.Closeable;
-import java.io.File;
-import java.io.Serializable;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.PreparedStatement;
@@ -58,10 +57,10 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     private static final String WIDTH_KEY = String.valueOf( LocalDB.MAX_KEY_LENGTH );
 
     protected Driver driver;
-    protected File dbDirectory;
+    protected Path dbDirectory;
 
     // cache of dbIterators
-    private final Set<LocalDB.LocalDBIterator<Map.Entry<String, String>>> dbIterators = Collections.newSetFromMap(
+    private final Set<LocalDB.LocalDBIterator> dbIterators = Collections.newSetFromMap(
             new ConcurrentHashMap<>() );
 
     // sql db connection
@@ -101,11 +100,11 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
                     statement = connection.createStatement();
                     statement.execute( sqlString );
                     connection.commit();
-                    LOGGER.debug( () -> "created table " + db.toString() + " (" + TimeDuration.fromCurrent( startTime ).asCompactString() + ")" );
+                    LOGGER.debug( () -> "created table " + db + " (" + TimeDuration.fromCurrent( startTime ).asCompactString() + ")" );
                 }
                 catch ( final SQLException ex )
                 {
-                    LOGGER.error( () -> "error creating new table " + db.toString() + ": " + ex.getMessage() );
+                    LOGGER.error( () -> "error creating new table " + db + ": " + ex.getMessage() );
                 }
                 finally
                 {
@@ -115,11 +114,11 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
 
             {
                 final Instant startTime = Instant.now();
-                final String indexName = db.toString() + "_IDX";
+                final String indexName = db + "_IDX";
                 final StringBuilder sqlString = new StringBuilder();
                 sqlString.append( "CREATE index " ).append( indexName );
-                sqlString.append( " ON " ).append( db.toString() );
-                sqlString.append( " (" ).append( KEY_COLUMN ).append( ")" );
+                sqlString.append( " ON " ).append( db );
+                sqlString.append( " (" ).append( KEY_COLUMN ).append( ')' );
 
                 Statement statement = null;
                 try
@@ -144,7 +143,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     private static void checkIfTableExists( final Connection connection, final LocalDB.DB db ) throws LocalDBException
     {
         final StringBuilder sb = new StringBuilder();
-        sb.append( "SELECT * FROM  " ).append( db.toString() ).append( " WHERE " + KEY_COLUMN + " = '0'" );
+        sb.append( "SELECT * FROM  " ).append( db ).append( " WHERE " + KEY_COLUMN + " = '0'" );
         Statement statement = null;
         ResultSet resultSet = null;
         try
@@ -241,7 +240,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
             throws LocalDBException
     {
         preCheck( false );
-        return get( db, key ) != null;
+        return get( db, key ).isPresent();
     }
 
     @Override
@@ -280,7 +279,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     }
 
     @Override
-    public void init( final File dbDirectory, final Map<String, String> initParams, final Map<Parameter, String> parameters )
+    public void init( final Path dbDirectory, final Map<String, String> initParams, final Map<Parameter, String> parameters )
             throws LocalDBException
     {
         this.dbDirectory = dbDirectory;
@@ -297,7 +296,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     }
 
     @Override
-    public LocalDB.LocalDBIterator<Map.Entry<String, String>> iterator( final LocalDB.DB db )
+    public LocalDB.LocalDBIterator iterator( final LocalDB.DB db )
             throws LocalDBException
     {
         try
@@ -327,7 +326,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
         PreparedStatement removeStatement = null;
 
         final String removeSqlString = "DELETE FROM " + db.toString() + " WHERE " + KEY_COLUMN + "=?";
-        final String insertSqlString = "INSERT INTO " + db.toString() + "(" + KEY_COLUMN + ", " + VALUE_COLUMN + ") VALUES(?,?)";
+        final String insertSqlString = "INSERT INTO " + db + "(" + KEY_COLUMN + ", " + VALUE_COLUMN + ") VALUES(?,?)";
 
         try
         {
@@ -437,7 +436,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
 
                 if ( !valueExists )
                 {
-                    final String insertSql = "INSERT INTO " + db.toString() + "(" + KEY_COLUMN + ", " + VALUE_COLUMN + ") VALUES(?,?)";
+                    final String insertSql = "INSERT INTO " + db + "(" + KEY_COLUMN + ", " + VALUE_COLUMN + ") VALUES(?,?)";
                     insertStatement = dbConnection.prepareStatement( insertSql );
                     insertStatement.setString( 1, key );
                     insertStatement.setString( 2, value );
@@ -486,7 +485,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     {
         preCheck( false );
         final StringBuilder sb = new StringBuilder();
-        sb.append( "SELECT COUNT(" + KEY_COLUMN + ") FROM " ).append( db.toString() );
+        sb.append( "SELECT COUNT(" + KEY_COLUMN + ") FROM " ).append( db );
 
         PreparedStatement statement = null;
         ResultSet resultSet = null;
@@ -527,7 +526,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
         preCheck( true );
         final Instant startTime = Instant.now();
         final StringBuilder sqlText = new StringBuilder();
-        sqlText.append( "DROP TABLE " ).append( db.toString() );
+        sqlText.append( "DROP TABLE " ).append( db );
 
         PreparedStatement statement = null;
         try
@@ -535,7 +534,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
             lock.writeLock().lock();
             try
             {
-                final Set<LocalDB.LocalDBIterator<Map.Entry<String, String>>> copiedIterators = new HashSet<>( dbIterators );
+                final Set<LocalDB.LocalDBIterator> copiedIterators = new HashSet<>( dbIterators );
 
                 for ( final LocalDB.LocalDBIterator dbIterator : copiedIterators )
                 {
@@ -603,13 +602,13 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     }
 
     abstract Connection openConnection(
-            File databaseDirectory,
+            Path databaseDirectory,
             String driverClasspath,
             Map<String, String> initParams
     ) throws LocalDBException;
 
 
-    private class DbIterator implements Closeable, LocalDB.LocalDBIterator<Map.Entry<String, String>>
+    private class DbIterator implements Closeable, LocalDB.LocalDBIterator
     {
         private Map.Entry<String, String> nextItem;
 
@@ -688,7 +687,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     }
 
     @Override
-    public File getFileLocation( )
+    public Path getFileLocation( )
     {
         return dbDirectory;
     }
@@ -709,7 +708,7 @@ public abstract class AbstractJDBCLocalDB implements LocalDBProvider
     abstract String getDriverClasspath( );
 
     @Override
-    public Map<String, Serializable> debugInfo( )
+    public Map<String, Object> debugInfo( )
     {
         return Collections.emptyMap();
     }

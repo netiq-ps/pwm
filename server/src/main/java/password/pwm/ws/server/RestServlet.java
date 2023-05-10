@@ -43,13 +43,17 @@ import password.pwm.http.HttpHeader;
 import password.pwm.http.HttpMethod;
 import password.pwm.http.PwmHttpRequestWrapper;
 import password.pwm.http.filter.RequestInitializationFilter;
+import password.pwm.svc.stats.EpsStatistic;
+import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.AtomicLoopIntIncrementer;
+import password.pwm.util.java.AtomicLoopLongIncrementer;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.MutableReference;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogLevel;
+import password.pwm.util.logging.PwmLogManager;
 import password.pwm.util.logging.PwmLogger;
 
 import javax.servlet.ServletException;
@@ -69,7 +73,7 @@ import java.util.Optional;
 
 public abstract class RestServlet extends HttpServlet
 {
-    private static final AtomicLoopIntIncrementer REQUEST_COUNTER = new AtomicLoopIntIncrementer();
+    private static final AtomicLoopLongIncrementer REQUEST_COUNTER = new AtomicLoopLongIncrementer();
 
     private static final PwmLogger LOGGER = PwmLogger.forClass( RestServlet.class );
 
@@ -102,30 +106,9 @@ public abstract class RestServlet extends HttpServlet
             return;
         }
 
-        final Locale locale = readLocale( pwmApplication, req, resp );
+        final Locale locale = readLocale( pwmDomain.getPwmApplication(), req, resp );
 
-        final SessionLabel sessionLabel;
-        try
-        {
-            sessionLabel =  SessionLabel.builder()
-                    .sessionID( "rest-" + REQUEST_COUNTER.next() )
-                    .sourceAddress( RequestInitializationFilter.readUserNetworkAddress( req, pwmApplication.getConfig() ).orElse( "" ) )
-                    .sourceHostname( RequestInitializationFilter.readUserHostname( req, pwmApplication.getConfig() ).orElse( "" ) )
-                    .domain( pwmDomain.getDomainID().stringValue() )
-                    .build();
-        }
-        catch ( final PwmUnrecoverableException e )
-        {
-            final RestResultBean restResultBean  = RestResultBean.fromError(
-                    e.getErrorInformation(),
-                    pwmDomain,
-                    locale,
-                    pwmDomain.getConfig(),
-                    pwmDomain.determineIfDetailErrorMsgShown()
-            );
-            outputRestResultBean( restResultBean, req, resp );
-            return;
-        }
+        final SessionLabel sessionLabel = SessionLabel.forRestRequest( pwmApplication, req, REQUEST_COUNTER, pwmDomain.getDomainID() );
 
         logHttpRequest( pwmApplication, req, sessionLabel );
 
@@ -148,60 +131,67 @@ public abstract class RestServlet extends HttpServlet
             return;
         }
 
-        final RestResultBean restResultBean = executeRequest( req, resp, locale, pwmApplication, pwmDomain, sessionLabel );
+        final MutableReference<RestResultBean> mutableReference = new MutableReference<>();
 
+        PwmLogManager.executeWithThreadSessionData( sessionLabel, () ->
+        {
+            mutableReference.set( executeRequest( req, resp, locale, pwmApplication, pwmDomain, sessionLabel ) );
+        } );
+
+
+        final RestResultBean restResultBean = mutableReference.get();
         outputRestResultBean( restResultBean, req, resp );
         final boolean success = restResultBean != null && !restResultBean.isError();
-        LOGGER.trace( sessionLabel, () -> "completed rest invocation, success=" + success, () -> TimeDuration.fromCurrent( startTime ) );
+        LOGGER.trace( sessionLabel, () -> "completed rest invocation, success=" + success, TimeDuration.fromCurrent( startTime ) );
     }
 
-   private RestResultBean executeRequest(
-           final HttpServletRequest req,
-           final HttpServletResponse resp,
-           final Locale locale,
-           final PwmApplication pwmApplication,
-           final PwmDomain pwmDomain,
-           final SessionLabel sessionLabel
-   )
-   {
-       try
-       {
-           final RestAuthentication restAuthentication = new RestAuthenticationProcessor( pwmDomain, sessionLabel, req ).readRestAuthentication();
-           LOGGER.debug( sessionLabel, () -> "rest request authentication status: " + JsonUtil.serialize( restAuthentication ) );
+    private RestResultBean executeRequest(
+            final HttpServletRequest req,
+            final HttpServletResponse resp,
+            final Locale locale,
+            final PwmApplication pwmApplication,
+            final PwmDomain pwmDomain,
+            final SessionLabel sessionLabel
+    )
+    {
+        try
+        {
+            final RestAuthentication restAuthentication = new RestAuthenticationProcessor( pwmDomain, sessionLabel, req ).readRestAuthentication();
+            LOGGER.debug( sessionLabel, () -> "rest request authentication status: " + JsonFactory.get().serialize( restAuthentication ) );
 
-           final RestRequest restRequest = RestRequest.forRequest( pwmDomain, restAuthentication, sessionLabel, req );
+            final RestRequest restRequest = RestRequest.forRequest( pwmDomain, restAuthentication, sessionLabel, req );
 
-           RequestInitializationFilter.addStaticResponseHeaders( pwmApplication, req, resp );
+            RequestInitializationFilter.addStaticResponseHeaders( pwmApplication, req, resp );
 
-           preCheck( restRequest );
+            preCheck( restRequest );
 
-           preCheckRequest( restRequest );
+            preCheckRequest( restRequest );
 
-           return invokeWebService( restRequest );
-       }
-       catch ( final PwmUnrecoverableException e )
-       {
-           return RestResultBean.fromError(
-                   e.getErrorInformation(),
-                   pwmDomain,
-                   locale,
-                   pwmDomain.getConfig(),
-                   pwmDomain.determineIfDetailErrorMsgShown()
-           );
-       }
-       catch ( final Throwable e )
-       {
-           final String errorMsg = "internal error during rest service invocation: " + e.getMessage();
-           final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_INTERNAL, errorMsg );
-           LOGGER.error( sessionLabel, errorInformation, e );
-           return RestResultBean.fromError(
-                   errorInformation,
-                   pwmDomain,
-                   locale,
-                   pwmDomain.getConfig(),
-                   pwmDomain.determineIfDetailErrorMsgShown() );
-       }
-   }
+            return invokeWebService( restRequest );
+        }
+        catch ( final PwmUnrecoverableException e )
+        {
+            return RestResultBean.fromError(
+                    e.getErrorInformation(),
+                    pwmDomain,
+                    locale,
+                    pwmDomain.getConfig(),
+                    pwmDomain.determineIfDetailErrorMsgShown()
+            );
+        }
+        catch ( final Throwable e )
+        {
+            final String errorMsg = "internal error during rest service invocation: " + e.getMessage();
+            final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_INTERNAL, errorMsg );
+            LOGGER.error( sessionLabel, errorInformation, e );
+            return RestResultBean.fromError(
+                    errorInformation,
+                    pwmDomain,
+                    locale,
+                    pwmDomain.getConfig(),
+                    pwmDomain.determineIfDetailErrorMsgShown() );
+        }
+    }
 
     private static void logHttpRequest(
             final PwmApplication pwmApplication,
@@ -211,7 +201,7 @@ public abstract class RestServlet extends HttpServlet
     {
         try
         {
-            if ( LOGGER.isEnabled( PwmLogLevel.TRACE ) )
+            if ( LOGGER.isInterestingLevel( PwmLogLevel.TRACE ) )
             {
                 final PwmHttpRequestWrapper httpRequestWrapper = new PwmHttpRequestWrapper( req, pwmApplication.getConfig() );
                 final String debutTxt = httpRequestWrapper.debugHttpRequestToString( null, true );
@@ -220,7 +210,7 @@ public abstract class RestServlet extends HttpServlet
         }
         catch ( final PwmUnrecoverableException e )
         {
-            LOGGER.error( () -> "error while trying to log HTTP request data " + e.getMessage(), e );
+            LOGGER.error( sessionLabel, () -> "error while trying to log HTTP request data " + e.getMessage(), e );
         }
     }
 
@@ -236,16 +226,18 @@ public abstract class RestServlet extends HttpServlet
         return locale;
     }
 
-    private RestResultBean invokeWebService( final RestRequest restRequest ) throws IOException, PwmUnrecoverableException
+    private RestResultBean invokeWebService( final RestRequest restRequest )
+            throws IOException, PwmUnrecoverableException
     {
         final Method interestedMethod = discoverMethodForAction( this.getClass(), restRequest );
 
         if ( interestedMethod != null )
         {
-            interestedMethod.setAccessible( true );
             try
             {
-                return ( RestResultBean ) interestedMethod.invoke( this, restRequest );
+                final RestResultBean<?> restResultBean = ( RestResultBean ) interestedMethod.invoke( this, restRequest );
+                StatisticsClient.updateEps( restRequest.getDomain().getPwmApplication(), EpsStatistic.REST_REQUESTS );
+                return restResultBean;
             }
             catch ( final InvocationTargetException e )
             {
@@ -341,13 +333,13 @@ public abstract class RestServlet extends HttpServlet
         {
             errorMsg = "HTTP method unavailable";
         }
-        else if ( !reqAccept.isPresent() && !anyMatch.isAcceptMatch() )
+        else if ( reqAccept.isEmpty() && !anyMatch.isAcceptMatch() )
         {
-            errorMsg = HttpHeader.Accept.getHttpName() + " header is required";
+            errorMsg = HttpHeader.Accept.getHttpName() + " header is missing or has an unexpected value";
         }
-        else if ( !reqContent.isPresent() && !anyMatch.isContentMatch() )
+        else if ( reqContent.isEmpty() && !anyMatch.isContentMatch() )
         {
-            errorMsg = HttpHeader.ContentType.getHttpName() + " header is required";
+            errorMsg = HttpHeader.ContentType.getHttpName() + " header is missing or has an unexpected value";
         }
         else if ( !anyMatch.isAcceptMatch() )
         {
@@ -448,7 +440,12 @@ public abstract class RestServlet extends HttpServlet
                     resp.setHeader( HttpHeader.ContentType.getHttpName(), HttpContentType.plain.getHeaderValueWithEncoding() );
                     if ( restResultBean.isError() )
                     {
-                        resp.sendError( HttpServletResponse.SC_INTERNAL_SERVER_ERROR, restResultBean.getErrorMessage() );
+                        resp.setStatus( HttpServletResponse.SC_INTERNAL_SERVER_ERROR );
+                        try ( PrintWriter pw = resp.getWriter() )
+                        {
+                            pw.write( restResultBean.getErrorDetail() );
+                            pw.write( "\n" );
+                        }
                     }
                     else
                     {
@@ -484,6 +481,8 @@ public abstract class RestServlet extends HttpServlet
             }
             outputLastHopeError( msg, resp );
         }
+
+        resp.flushBuffer();
     }
 
     private static void outputLastHopeError( final String msg, final HttpServletResponse response ) throws IOException

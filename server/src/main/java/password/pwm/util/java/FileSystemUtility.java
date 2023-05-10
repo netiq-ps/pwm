@@ -21,44 +21,53 @@
 package password.pwm.util.java;
 
 import lombok.Value;
-import password.pwm.error.PwmError;
-import password.pwm.error.PwmUnrecoverableException;
+import password.pwm.PwmConstants;
+import password.pwm.error.PwmException;
+import password.pwm.util.i18n.LocaleHelper;
 import password.pwm.util.logging.PwmLogger;
+import password.pwm.util.secure.PwmHashAlgorithm;
+import password.pwm.util.secure.SecureEngine;
 
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.Serializable;
-import java.nio.Buffer;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
-import java.util.stream.Stream;
-import java.util.zip.CRC32;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class FileSystemUtility
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( FileSystemUtility.class );
 
-    private static final int CRC_BUFFER_SIZE = 60 * 1024;
-
-    public static Iterator<FileSummaryInformation> readFileInformation( final List<File> rootFiles )
+    public static List<FileSummaryInformation> readFileInformation( final List<Path> rootFiles )
     {
-        return rootFiles.stream().flatMap( FileSystemUtility::readFileInformation ).iterator();
+        final List<FileSummaryInformation> returnList = new ArrayList<>();
+        for ( final Path path : rootFiles )
+        {
+            returnList.addAll( readFileInformationHierarchy( path ) );
+        }
+        return List.copyOf( returnList );
     }
 
-    public static Stream<FileSummaryInformation> readFileInformation( final File rootFile )
+    public static List<FileSummaryInformation> readFileInformationHierarchy( final Path rootFile )
     {
         try
         {
-            return Files.walk( rootFile.toPath() )
-                    .map( Path::toFile )
-                    .filter( File::isFile )
-                    .map( FileSummaryInformation::fromFile );
+            final List<Path> paths =  Files.walk( rootFile )
+                    .filter( Files::isRegularFile )
+                    .collect( Collectors.toList() );
+
+            final List<FileSummaryInformation> returnList = new ArrayList<>();
+            for ( final Path path : paths )
+            {
+                returnList.add( FileSummaryInformation.fromFile( path ) );
+            }
+            return List.copyOf( returnList );
 
         }
         catch ( final IOException e )
@@ -66,185 +75,160 @@ public class FileSystemUtility
             LOGGER.trace( () -> "error during file summary load: " + e.getMessage() );
         }
 
-        return Stream.empty();
+        return Collections.emptyList();
     }
 
-    public static long getFileDirectorySize( final File dir )
+    public static long getFileDirectorySize( final Path dir )
     {
         try
         {
-            return Files.walk( dir.toPath() )
-                    .filter( path -> path.toFile().isFile() )
-                    .mapToLong( path -> path.toFile().length() )
-                    .sum();
+            final List<Path> files = Files.walk( dir )
+                    .filter( Files::isRegularFile )
+                    .collect( Collectors.toList() );
+
+            long totalSize = 0;
+            for ( final Path file : files )
+            {
+                totalSize += Files.size( file );
+            }
+            return totalSize;
         }
         catch ( final IOException e )
         {
-            LOGGER.error( () -> "error calculating disk size of '" + dir.getAbsolutePath() + "', error: " + e.getMessage(), e );
+            LOGGER.error( () -> "error calculating disk size of '" + dir + "', error: " + e.getMessage(), e );
         }
 
         return -1;
     }
 
-    public static File figureFilepath( final String filename, final File suggestedPath )
+    public static Path figureFilepath( final String filename, final Path suggestedPath )
     {
-        if ( filename == null || filename.length() < 1 )
+        Objects.requireNonNull( filename );
+        Objects.requireNonNull( suggestedPath );
+
+        final Path filenamePath = Path.of( filename );
+
+        if ( filenamePath.isAbsolute() )
         {
-            return null;
+            return filenamePath;
         }
 
-        if ( ( new File( filename ) ).isAbsolute() )
+        return suggestedPath.resolve( filename );
+    }
+
+    public static long diskSpaceRemaining( final Path file )
+    {
+        try
         {
-            return new File( filename );
+            return Files.getFileStore( file ).getUsableSpace();
+        }
+        catch ( final IOException e )
+        {
+            LOGGER.error( () -> "error calculating disk space remaining of '" + file + "', error: " + e.getMessage(), e );
         }
 
-        return new File( suggestedPath + File.separator + filename );
+        return -1;
     }
 
-    public static long diskSpaceRemaining( final File file )
+    public static void rotateBackups( final Path inputFile, final int maxRotate )
+            throws IOException
     {
-        return file.getFreeSpace();
-    }
-
-    public static void rotateBackups( final File inputFile, final int maxRotate )
-    {
-        if ( maxRotate < 1 )
+        if ( maxRotate < 1 || inputFile == null || !Files.exists( inputFile ) )
         {
             return;
         }
+
         for ( int i = maxRotate; i >= 0; i-- )
         {
-            final File thisFile = ( i == 0 ) ? inputFile : new File( inputFile.getAbsolutePath() + "-" + i );
-            final File youngerFile = ( i <= 1 ) ? inputFile : new File( inputFile.getAbsolutePath() + "-" + ( i - 1 ) );
+            final Path thisFile = ( i == 0 ) ? inputFile : addFilenameSuffix( inputFile, "-" + i );
+            final Path youngerFile = ( i <= 1 ) ? inputFile : addFilenameSuffix( inputFile, "-" + ( i - 1 ) );
 
             if ( i == maxRotate )
             {
-                if ( thisFile.exists() )
+                if ( Files.exists( thisFile ) )
                 {
-                    LOGGER.debug( () -> "deleting old backup file: " + thisFile.getAbsolutePath() );
-                    if ( !thisFile.delete() )
-                    {
-                        LOGGER.error( () -> "unable to delete old backup file: " + thisFile.getAbsolutePath() );
-                    }
+                    LOGGER.debug( () -> "deleting old backup file: " + thisFile );
+                    Files.delete( thisFile );
                 }
             }
-            else if ( i == 0 || youngerFile.exists() )
+            else if ( i == 0 || Files.exists( youngerFile ) )
             {
-                final File destFile = new File( inputFile.getAbsolutePath() + "-" + ( i + 1 ) );
-                LOGGER.debug( () -> "backup file " + thisFile.getAbsolutePath() + " renamed to " + destFile.getAbsolutePath() );
-                if ( !thisFile.renameTo( destFile ) )
-                {
-                    LOGGER.debug( () -> "unable to rename file " + thisFile.getAbsolutePath() + " to " + destFile.getAbsolutePath() );
-                }
+                final Path destFile = addFilenameSuffix( inputFile, "-" + ( i + 1 ) );
+                LOGGER.debug( () -> "renaming backup file " + thisFile + " to " + destFile );
+                Files.move( thisFile, destFile );
             }
         }
     }
 
     @Value
-    public static class FileSummaryInformation implements Serializable
+    public static class FileSummaryInformation
     {
         private final String filename;
         private final String filepath;
         private final Instant modified;
         private final long size;
-        private final long checksum;
+        private final String sha512Hash;
 
-        public static FileSummaryInformation fromFile( final File file )
+        public static FileSummaryInformation fromFile( final Path file )
+                throws IOException
         {
-            final long crc32;
+            final String sha512Hash;
             try
             {
-                crc32 = crc32( file );
+                sha512Hash = SecureEngine.hash( file, PwmHashAlgorithm.SHA512 );
             }
-            catch ( final IOException exception )
+            catch ( final PwmException exception )
             {
                 throw new IllegalStateException( exception );
             }
 
             return new FileSummaryInformation(
-                    file.getName(),
-                    file.getParentFile().getAbsolutePath(),
-                    Instant.ofEpochMilli( file.lastModified() ),
-                    file.length(),
-                    crc32
+                    LocaleHelper.orNotApplicable( file.getFileName(), PwmConstants.DEFAULT_LOCALE ),
+                    LocaleHelper.orNotApplicable( file.getParent(), PwmConstants.DEFAULT_LOCALE ),
+                    Files.getLastModifiedTime( file ).toInstant(),
+                    Files.size( file ),
+                    sha512Hash
             );
         }
     }
 
-    public static void deleteDirectoryContents( final File path ) throws IOException
-    {
-        deleteDirectoryContents( path, false );
-    }
-
-    private static void deleteDirectoryContents( final File path, final boolean deleteThisLevel )
+    public static void deleteDirectoryContentsRecursively( final Path path )
             throws IOException
     {
-        if ( !path.exists() )
-        {
-            throw new FileNotFoundException( path.getAbsolutePath() );
-        }
+        Objects.requireNonNull( path );
 
-        if ( path.isDirectory() )
-        {
-            final File[] files = path.listFiles();
-            if ( files != null )
-            {
-                for ( final File f : files )
-                {
-                    deleteDirectoryContents( f, true );
-                }
-            }
-        }
+        final Iterator<Path> pathIterator = Files.walk( path )
+                .filter( other -> !path.equals( other ) )
+                .sorted( Comparator.reverseOrder() )
+                .iterator();
 
-        if ( deleteThisLevel )
+        while ( pathIterator.hasNext() )
         {
-            LOGGER.debug( () -> "deleting temporary file " + path.getAbsolutePath() );
-            try
-            {
-                Files.delete( path.toPath() );
-            }
-            catch ( final IOException e )
-            {
-                LOGGER.warn( () -> "error deleting temporary file '" + path.getAbsolutePath() + "', error: " + e.getMessage() );
-            }
+            final Path nextPath = pathIterator.next();
+            Files.delete( nextPath );
         }
     }
 
-    private static long crc32( final File file )
+    public static Path createDirectory( final Path basePath, final String newDirectoryName )
             throws IOException
     {
-        final CRC32 crc32 = new CRC32();
-        final FileChannel fileChannel = FileChannel.open( file.toPath() );
-        final int bufferSize = (int) Math.min( file.length(), CRC_BUFFER_SIZE );
-        final ByteBuffer byteBuffer = ByteBuffer.allocateDirect( bufferSize );
-
-        while ( fileChannel.read( byteBuffer ) > 0 )
-        {
-            // redundant cast to buffer to solve jdk8/9 inter-op issue
-            ( ( Buffer ) byteBuffer ).flip();
-
-            crc32.update( byteBuffer );
-
-            // redundant cast to buffer to solve jdk8/9 inter-op issue
-            ( ( Buffer ) byteBuffer ).clear();
-        }
-
-        return crc32.getValue();
+        final Path path = basePath.resolve( newDirectoryName );
+        return Files.createDirectories( path );
     }
 
-    public static void mkdirs( final File file )
-            throws PwmUnrecoverableException
+    public static Path addFilenameSuffix( final Path path, final String suffix )
+            throws IOException
     {
-        if ( !file.exists() )
+        final Path filenamePath = path.getFileName();
+        if ( filenamePath == null )
         {
-            if ( !file.mkdirs() )
-            {
-                throw PwmUnrecoverableException.newException( PwmError.ERROR_INTERNAL, "unable to create directory: " + file.getAbsolutePath() );
-            }
+            throw new IOException( "can not add suffix to empty filename" );
         }
-        else if ( !file.isDirectory() )
+        final String filename = filenamePath.toString();
+        if ( StringUtil.isEmpty( filename ) )
         {
-            throw PwmUnrecoverableException.newException( PwmError.ERROR_INTERNAL, "unable to create directory, file already exists: " + file.getAbsolutePath() );
+            throw new IOException( "can not add suffix to empty filename" );
         }
+        return path.resolveSibling( filename + suffix );
     }
 }

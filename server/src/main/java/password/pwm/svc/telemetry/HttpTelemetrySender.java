@@ -20,8 +20,7 @@
 
 package password.pwm.svc.telemetry;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Value;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
 import password.pwm.bean.SessionLabel;
@@ -33,10 +32,9 @@ import password.pwm.http.HttpMethod;
 import password.pwm.svc.httpclient.PwmHttpClient;
 import password.pwm.svc.httpclient.PwmHttpClientConfiguration;
 import password.pwm.svc.httpclient.PwmHttpClientRequest;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -55,7 +53,7 @@ public class HttpTelemetrySender implements TelemetrySender
     {
         this.pwmApplication = pwmDomain;
         this.sessionLabel = sessionLabel;
-        settings = JsonUtil.deserialize( initString, HttpTelemetrySender.Settings.class );
+        settings = JsonFactory.get().deserialize( initString, HttpTelemetrySender.Settings.class );
     }
 
     @Override
@@ -65,8 +63,8 @@ public class HttpTelemetrySender implements TelemetrySender
         final PwmHttpClientConfiguration pwmHttpClientConfiguration = PwmHttpClientConfiguration.builder()
                 .trustManagerType( PwmHttpClientConfiguration.TrustManagerType.promiscuous )
                 .build();
-        final PwmHttpClient pwmHttpClient = pwmApplication.getHttpClientService().getPwmHttpClient( pwmHttpClientConfiguration );
-        final String body = JsonUtil.serialize( statsPublishBean );
+        final PwmHttpClient pwmHttpClient = pwmApplication.getHttpClientService().getPwmHttpClient( pwmHttpClientConfiguration, sessionLabel );
+        final String body = JsonFactory.get().serialize( statsPublishBean );
         final Map<String, String> headers = new HashMap<>();
         headers.put( HttpHeader.ContentType.getHttpName(), HttpContentType.json.getHeaderValueWithEncoding() );
         headers.put( HttpHeader.Accept.getHttpName(), PwmConstants.AcceptValue.json.getHeaderValue() );
@@ -78,13 +76,12 @@ public class HttpTelemetrySender implements TelemetrySender
                 .build();
 
         LOGGER.trace( sessionLabel, () -> "preparing to send telemetry data to '" + settings.getUrl() + ")" );
-        pwmHttpClient.makeRequest( pwmHttpClientRequest, sessionLabel );
+        pwmHttpClient.makeRequest( pwmHttpClientRequest );
         LOGGER.trace( sessionLabel, () -> "sent telemetry data to '" + settings.getUrl() + ")" );
     }
 
-    @Getter
-    @AllArgsConstructor
-    private static class Settings implements Serializable
+    @Value
+    private static class Settings
     {
         private String url;
     }

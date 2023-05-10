@@ -30,7 +30,8 @@ import password.pwm.config.value.StringValue;
 import password.pwm.config.value.ValueTypeConverter;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.i18n.PwmLocaleBundle;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.EnumUtil;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.secure.PwmSecurityKey;
 
@@ -43,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -56,7 +58,7 @@ public class StoredConfigurationImpl implements StoredConfiguration
     private final Instant modifyTime;
     private final Map<StoredConfigKey, StoredValue> storedValues;
     private final Map<StoredConfigKey, ValueMetaData> metaValues;
-    private final Map<DomainID, PwmSettingTemplateSet> templateSet;
+    private final Map<DomainID, PwmSettingTemplateSet> templateSets;
 
     private static final PwmLogger LOGGER = PwmLogger.forClass( StoredConfigurationImpl.class );
 
@@ -64,18 +66,18 @@ public class StoredConfigurationImpl implements StoredConfiguration
     {
         this.createTime = storedConfigData.getCreateTime();
         this.modifyTime = storedConfigData.getModifyTime();
-        this.metaValues = Map.copyOf( new TreeMap<>( storedConfigData.getMetaDatas() ) );
-        this.templateSet = TemplateSetReader.readTemplateSet( storedConfigData.getStoredValues() );
-        this.storedValues = Map.copyOf( new TreeMap<>( storedConfigData.getStoredValues() ) );
+        this.metaValues = Collections.unmodifiableMap( new TreeMap<>( storedConfigData.getMetaDatas() ) );
+        this.templateSets = TemplateSetReader.readTemplateSet( storedConfigData.getStoredValues() );
+        this.storedValues = Collections.unmodifiableMap(  new TreeMap<>( storedConfigData.getStoredValues() ) );
     }
 
     StoredConfigurationImpl()
     {
-        this.createTime = JavaHelper.toIsoDate( Instant.now() );
+        this.createTime = StringUtil.toIsoDate( Instant.now() );
         this.modifyTime = Instant.now();
         this.storedValues = Collections.emptyMap();
         this.metaValues = Collections.emptyMap();
-        this.templateSet = TemplateSetReader.readTemplateSet( Collections.emptyMap() );
+        this.templateSets = TemplateSetReader.readTemplateSet( Collections.emptyMap() );
     }
 
     @Override
@@ -114,9 +116,9 @@ public class StoredConfigurationImpl implements StoredConfiguration
     }
 
     @Override
-    public Map<DomainID, PwmSettingTemplateSet> getTemplateSet()
+    public Map<DomainID, PwmSettingTemplateSet> getTemplateSets()
     {
-        return templateSet;
+        return templateSets;
     }
 
     private static class TemplateSetReader
@@ -130,11 +132,11 @@ public class StoredConfigurationImpl implements StoredConfiguration
             final List<DomainID> domainIDList = domainStrList.stream().map( DomainID::create ).collect( Collectors.toList() );
 
             final Map<DomainID, PwmSettingTemplateSet> templateSets = domainIDList.stream().collect( Collectors.toMap(
-                    domainID -> domainID,
+                    Function.identity(),
                     domainID -> readTemplateSet( valueMap, domainID )
             ) );
             templateSets.put( DomainID.systemId(), PwmSettingTemplateSet.getDefault() );
-            return Map.copyOf( new TreeMap<>( templateSets ) );
+            return Collections.unmodifiableMap( new TreeMap<>( templateSets ) );
         }
 
         private static PwmSettingTemplateSet readTemplateSet( final Map<StoredConfigKey, StoredValue> valueMap, final DomainID domain )
@@ -159,7 +161,7 @@ public class StoredConfigurationImpl implements StoredConfiguration
                 try
                 {
                     final String strValue = ( String ) storedValue.toNativeObject();
-                    return Optional.ofNullable( JavaHelper.readEnumFromString( PwmSettingTemplate.class, null, strValue ) );
+                    return EnumUtil.readEnumFromString( PwmSettingTemplate.class, strValue );
                 }
                 catch ( final IllegalStateException e )
                 {

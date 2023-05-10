@@ -20,12 +20,16 @@
 
 package password.pwm.util.cli.commands;
 
+import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.PasswordData;
+import password.pwm.util.cli.CliException;
 import password.pwm.util.cli.CliParameters;
 import password.pwm.util.secure.HttpsServerCertificateManager;
 
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyStore;
 import java.util.Arrays;
 
@@ -36,10 +40,10 @@ public class ExportHttpsKeyStoreCommand extends AbstractCliCommand
 
     @Override
     void doCommand( )
-            throws Exception
+            throws IOException, PwmUnrecoverableException, CliException
     {
-        final File outputFile = ( File ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_NEW_OUTPUT_FILE.getName() );
-        if ( outputFile.exists() )
+        final Path outputFile = ( Path ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_NEW_OUTPUT_FILE.getName() );
+        if ( Files.exists( outputFile ) )
         {
             out( "outputFile for ExportHttpsKeyStore cannot already exist" );
             return;
@@ -48,39 +52,30 @@ public class ExportHttpsKeyStoreCommand extends AbstractCliCommand
         final String password = getOptionalPassword();
         final String alias = ( String ) cliEnvironment.getOptions().get( ALIAS_OPTIONNAME );
 
-        final KeyStore keyStore = HttpsServerCertificateManager.keyStoreForApplication( cliEnvironment.getPwmApplication(), new PasswordData( password ), alias );
+        final KeyStore keyStore = HttpsServerCertificateManager.keyStoreForApplication(
+                cliEnvironment.getPwmApplication(),
+                new PasswordData( password ),
+                alias );
 
-        try ( FileOutputStream fos = new FileOutputStream( outputFile ) )
+        try ( OutputStream outputStream = Files.newOutputStream( outputFile ) )
         {
-            keyStore.store( fos, password.toCharArray() );
+            try
+            {
+                keyStore.store( outputStream, password.toCharArray() );
+            }
+            catch ( final Exception e )
+            {
+                throw new CliException( "error writing keystore to file: " + e.getMessage() );
+            }
         }
 
-        out( "successfully exported java keystore to " + outputFile.getAbsolutePath() );
+        out( "successfully exported java keystore to " + outputFile );
     }
 
     @Override
     public CliParameters getCliParameters( )
     {
-        final CliParameters.Option aliasValueOption = new CliParameters.Option()
-        {
-            @Override
-            public boolean isOptional( )
-            {
-                return false;
-            }
-
-            @Override
-            public Type getType( )
-            {
-                return Type.STRING;
-            }
-
-            @Override
-            public String getName( )
-            {
-                return ALIAS_OPTIONNAME;
-            }
-        };
+        final CliParameters.Option aliasValueOption = CliParameters.newRequiredStringOption( ALIAS_OPTIONNAME );
 
         final CliParameters cliParameters = new CliParameters();
         cliParameters.commandName = "ExportHttpsKeyStore";

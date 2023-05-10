@@ -23,6 +23,7 @@ package password.pwm.svc.shorturl;
 import password.pwm.AppProperty;
 import password.pwm.PwmApplication;
 import password.pwm.bean.DomainID;
+import password.pwm.bean.SessionLabel;
 import password.pwm.config.AppConfig;
 import password.pwm.config.PwmSetting;
 import password.pwm.error.PwmException;
@@ -32,7 +33,6 @@ import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
 import password.pwm.util.logging.PwmLogger;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -82,21 +82,9 @@ public class UrlShortenerService extends AbstractPwmService implements PwmServic
                 theShortener = ( BasicUrlShortener ) theClass.getDeclaredConstructor().newInstance();
                 theShortener.setConfiguration( sConfig );
             }
-            catch ( final java.lang.IllegalAccessException e )
+            catch ( final Exception e )
             {
-                LOGGER.error( () ->  "illegal access to class " + classNameString + ": " + e.toString() );
-            }
-            catch ( final java.lang.InstantiationException e )
-            {
-                LOGGER.error( () -> "cannot instantiate class " + classNameString + ": " + e.toString() );
-            }
-            catch ( final java.lang.ClassNotFoundException e )
-            {
-                LOGGER.error( () -> "class " + classNameString + " not found: " + e.getMessage() );
-            }
-            catch ( final NoSuchMethodException | InvocationTargetException e )
-            {
-                e.printStackTrace();
+                LOGGER.error( () -> "error loading url shortener class " + classNameString + ": " + e.getMessage() );
             }
         }
 
@@ -104,7 +92,7 @@ public class UrlShortenerService extends AbstractPwmService implements PwmServic
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         setStatus( PwmService.STATUS.CLOSED );
     }
@@ -115,16 +103,17 @@ public class UrlShortenerService extends AbstractPwmService implements PwmServic
         return Collections.emptyList();
     }
 
-    public String shortenUrl( final String text ) throws PwmUnrecoverableException
+    public String shortenUrl( final String text, final SessionLabel sessionLabel )
+            throws PwmUnrecoverableException
     {
         if ( theShortener != null )
         {
-            return theShortener.shorten( text, getPwmApplication() );
+            return theShortener.shorten( text, getPwmApplication(), sessionLabel );
         }
         return text;
     }
 
-    public String shortenUrlInText( final String text ) throws PwmUnrecoverableException
+    public String shortenUrlInText( final String text, final SessionLabel sessionLabel ) throws PwmUnrecoverableException
     {
         final String urlRegex = getPwmApplication().getConfig().readAppProperty( AppProperty.URL_SHORTNER_URL_REGEX );
         try
@@ -142,7 +131,7 @@ public class UrlShortenerService extends AbstractPwmService implements PwmServic
                 end = m.end();
                 while ( found )
                 {
-                    result.append( shortenUrl( text.substring( start, end ) ) );
+                    result.append( shortenUrl( text.substring( start, end ), sessionLabel ) );
                     start = end;
                     found = m.find();
                     if ( found )

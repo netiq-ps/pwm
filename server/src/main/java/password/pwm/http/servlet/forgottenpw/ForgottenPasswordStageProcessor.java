@@ -22,6 +22,7 @@ package password.pwm.http.servlet.forgottenpw;
 
 import password.pwm.PwmDomain;
 import password.pwm.bean.PasswordStatus;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.SessionLabel;
 import password.pwm.config.DomainConfig;
 import password.pwm.config.PwmSetting;
@@ -36,11 +37,11 @@ import password.pwm.http.PwmRequestAttribute;
 import password.pwm.http.PwmRequestContext;
 import password.pwm.http.bean.ForgottenPasswordBean;
 import password.pwm.http.bean.ForgottenPasswordStage;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.password.PasswordUtility;
 
@@ -144,16 +145,16 @@ class ForgottenPasswordStageProcessor
                 return Optional.of( ForgottenPasswordStage.VERIFICATION );
             }
 
-            final ForgottenPasswordProfile forgottenPasswordProfile = ForgottenPasswordUtil.forgottenPasswordProfile( pwmDomain, forgottenPasswordBean );
+            final ForgottenPasswordProfile forgottenPasswordProfile = ForgottenPasswordUtil.forgottenPasswordProfile( pwmDomain, sessionLabel, forgottenPasswordBean );
             {
-                final Map<String, ForgottenPasswordProfile> profileIDList = config.getForgottenPasswordProfiles();
+                final Map<ProfileID, ForgottenPasswordProfile> profileIDList = config.getForgottenPasswordProfiles();
                 final String profileDebugMsg = forgottenPasswordProfile != null && profileIDList != null && profileIDList.size() > 1
-                        ? " profile=" + forgottenPasswordProfile.getIdentifier() + ", "
+                        ? " profile=" + forgottenPasswordProfile.getId() + ", "
                         : "";
                 LOGGER.trace( sessionLabel, () -> "entering forgotten password progress engine: "
                         + profileDebugMsg
-                        + "flags=" + JsonUtil.serialize( recoveryFlags ) + ", "
-                        + "progress=" + JsonUtil.serialize( progress ) );
+                        + "flags=" + JsonFactory.get().serialize( recoveryFlags ) + ", "
+                        + "progress=" + JsonFactory.get().serialize( progress ) );
             }
 
             if ( forgottenPasswordProfile == null )
@@ -234,7 +235,7 @@ class ForgottenPasswordStageProcessor
 
                     // for rest method, fail if any required methods are not supported
                     {
-                        final Set<IdentityVerificationMethod> tempSet = CollectionUtil.copiedEnumSet( remainingAvailableOptionalMethods, IdentityVerificationMethod.class );
+                        final Set<IdentityVerificationMethod> tempSet = CollectionUtil.copyToEnumSet( remainingAvailableOptionalMethods, IdentityVerificationMethod.class );
                         tempSet.removeAll( ForgottenPasswordStateMachine.supportedVerificationMethods() );
                         if ( !tempSet.isEmpty() )
                         {
@@ -332,7 +333,7 @@ class ForgottenPasswordStageProcessor
                             PwmError.ERROR_INTERNAL, "unable to load userInfo while processing forgotten password controller 6" ) );
 
             // check if user's pw is within min lifetime window
-            final ForgottenPasswordProfile forgottenPasswordProfile = ForgottenPasswordUtil.forgottenPasswordProfile( pwmDomain, forgottenPasswordBean );
+            final ForgottenPasswordProfile forgottenPasswordProfile = ForgottenPasswordUtil.forgottenPasswordProfile( pwmDomain, sessionLabel, forgottenPasswordBean );
             final RecoveryMinLifetimeOption minLifetimeOption = forgottenPasswordProfile.readSettingAsEnum(
                     PwmSetting.RECOVERY_MINIMUM_PASSWORD_LIFETIME_OPTIONS,
                     RecoveryMinLifetimeOption.class
@@ -369,7 +370,7 @@ class ForgottenPasswordStageProcessor
                     .orElseThrow( () -> PwmUnrecoverableException.newException(
                             PwmError.ERROR_INTERNAL, "unable to load userInfo while processing forgotten password controller 7" ) );
 
-            final ForgottenPasswordProfile forgottenPasswordProfile = ForgottenPasswordUtil.forgottenPasswordProfile( pwmDomain, forgottenPasswordBean );
+            final ForgottenPasswordProfile forgottenPasswordProfile = ForgottenPasswordUtil.forgottenPasswordProfile( pwmDomain, sessionLabel, forgottenPasswordBean );
 
             final RecoveryMinLifetimeOption minLifetimeOption = forgottenPasswordProfile.readSettingAsEnum(
                     PwmSetting.RECOVERY_MINIMUM_PASSWORD_LIFETIME_OPTIONS,

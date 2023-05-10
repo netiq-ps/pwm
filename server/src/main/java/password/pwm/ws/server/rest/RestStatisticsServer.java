@@ -33,14 +33,16 @@ import password.pwm.http.HttpContentType;
 import password.pwm.http.HttpMethod;
 import password.pwm.http.PwmHttpRequestWrapper;
 import password.pwm.svc.stats.AvgStatistic;
-import password.pwm.svc.stats.DailyKey;
 import password.pwm.svc.stats.EpsStatistic;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticType;
 import password.pwm.svc.stats.StatisticsBundle;
+import password.pwm.svc.stats.StatisticsBundleKey;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.svc.stats.StatisticsService;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.ws.server.RestMethodHandler;
@@ -50,18 +52,17 @@ import password.pwm.ws.server.RestServlet;
 import password.pwm.ws.server.RestWebServer;
 
 import javax.servlet.annotation.WebServlet;
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @WebServlet(
         urlPatterns = {
@@ -79,7 +80,7 @@ public class RestStatisticsServer extends RestServlet
 
     @Value
     @Builder
-    public static class JsonOutput implements Serializable
+    public static class JsonOutput
     {
         public List<StatLabelData> labels;
         public List<StatValue> eventRates;
@@ -89,7 +90,7 @@ public class RestStatisticsServer extends RestServlet
     }
 
     @Builder
-    @Value static class HistoryData implements Serializable
+    @Value static class HistoryData
     {
         private String name;
         private String date;
@@ -101,14 +102,14 @@ public class RestStatisticsServer extends RestServlet
     }
 
     @Value
-    public static class StatValue implements Serializable
+    public static class StatValue
     {
         private String name;
         private String value;
     }
 
     @Value
-    public static class StatLabelData implements Serializable
+    public static class StatLabelData
     {
         final String name;
         final String label;
@@ -138,7 +139,7 @@ public class RestStatisticsServer extends RestServlet
                 return OutputVersion2.makeData( restRequest );
 
             default:
-                JavaHelper.unhandledSwitchStatement( version );
+                PwmUtil.unhandledSwitchStatement( version );
         }
 
         // unreachable
@@ -158,29 +159,26 @@ public class RestStatisticsServer extends RestServlet
                     MAX_DAYS
             );
 
-            final StatisticsService statisticsManager = restRequest.getDomain().getStatisticsManager();
+            final StatisticsService statisticsManager = restRequest.getDomain().getStatisticsService();
             final JsonOutput jsonOutput = RestStatisticsServer.JsonOutput.builder()
-                    .cumulative( makeStatInfos( statisticsManager, StatisticsService.KEY_CUMULATIVE ) )
-                    .current( makeStatInfos( statisticsManager, StatisticsService.KEY_CURRENT ) )
+                    .cumulative( makeStatInfos( statisticsManager.getCumulativeBundle() ) )
+                    .current( makeStatInfos( statisticsManager.getCurrentBundle() ) )
                     .eventRates( makeEpsStatInfos( statisticsManager ) )
                     .history( makeHistoryStatInfos( statisticsManager, days ) )
                     .labels( makeLabels( locale ) )
                     .build();
-            return RestResultBean.withData( jsonOutput );
+            return RestResultBean.withData( jsonOutput, JsonOutput.class );
         }
 
-        private static List<StatValue> makeStatInfos( final StatisticsService statisticsManager, final String key )
+        private static List<StatValue> makeStatInfos( final StatisticsBundle bundle )
         {
-            final Map<String, StatValue> output = new TreeMap<>();
-            for ( final Statistic statistic : Statistic.values() )
-            {
-                final StatisticsBundle bundle = statisticsManager.getStatBundleForKey( key );
-                final String value = bundle.getStatistic( statistic );
-                final StatValue statValue = new StatValue( statistic.name(), value );
-                output.put( statistic.name(), statValue );
-            }
+            final Map<String, StatValue> output = EnumUtil.enumStream( Statistic.class )
+                    .collect( Collectors.toMap(
+                            Enum::name,
+                            stat -> new StatValue( stat.name(), bundle.getStatistic( stat ) )
+                    ) );
 
-            return List.copyOf( output.values() );
+            return List.copyOf( new TreeMap<>( output ).values() );
         }
 
         private static List<HistoryData> makeHistoryStatInfos(
@@ -188,19 +186,21 @@ public class RestStatisticsServer extends RestServlet
                 final int days
         )
         {
-            final List<HistoryData> outerOutput = new ArrayList<>();
+            final List<HistoryData> outerOutput = new ArrayList<>( days );
 
-            DailyKey dailyKey = DailyKey.forToday();
+            StatisticsBundleKey dailyKey = StatisticsBundleKey.forToday();
 
             for ( int daysAgo = 0; daysAgo < days; daysAgo++ )
             {
                 final Map<String, StatValue> output = new TreeMap<>();
                 for ( final Statistic statistic : Statistic.values() )
                 {
-                    final StatisticsBundle bundle = statisticsManager.getStatBundleForKey( dailyKey.toString() );
-                    final String value = bundle.getStatistic( statistic );
-                    final StatValue statValue = new StatValue( statistic.name(), value );
-                    output.put( statistic.name(), statValue );
+                    statisticsManager.getStatBundleForKey( dailyKey ).ifPresent( bundle ->
+                    {
+                        final String value = bundle.getStatistic( statistic );
+                        final StatValue statValue = new StatValue( statistic.name(), value );
+                        output.put( statistic.name(), statValue );
+                    } );
                 }
                 final List<StatValue> statValues = List.copyOf( output.values() );
                 final HistoryData historyData = HistoryData.builder()
@@ -281,7 +281,7 @@ public class RestStatisticsServer extends RestServlet
     public static class OutputVersion1
     {
         @Data
-        public static class JsonOutput implements Serializable
+        public static class JsonOutput
         {
             @SuppressWarnings( "checkstyle:MemberName" )
             public Map<String, String> EPS;
@@ -298,7 +298,7 @@ public class RestStatisticsServer extends RestServlet
 
             try
             {
-                final StatisticsService statisticsManager = restRequest.getDomain().getStatisticsManager();
+                final StatisticsService statisticsManager = restRequest.getDomain().getStatisticsService();
                 final JsonOutput jsonOutput = new JsonOutput();
                 jsonOutput.EPS = addEpsStats( statisticsManager );
 
@@ -313,8 +313,7 @@ public class RestStatisticsServer extends RestServlet
 
                 StatisticsClient.incrementStat( restRequest.getDomain(), Statistic.REST_STATISTICS );
 
-                final RestResultBean resultBean = RestResultBean.withData( jsonOutput );
-                return resultBean;
+                return RestResultBean.withData( jsonOutput, JsonOutput.class );
             }
             catch ( final Exception e )
             {
@@ -326,27 +325,29 @@ public class RestStatisticsServer extends RestServlet
 
         public static Map<String, Object> doNameStat( final StatisticsService statisticsManager, final String statName, final String days )
         {
-            final Statistic statistic = Statistic.valueOf( statName );
+            final Statistic statistic = Statistic.forKey( statName ).orElseThrow();
             final int historyDays = StringUtil.convertStrToInt( days, 30 );
 
-            final Map<String, Object> results = new HashMap<>( statisticsManager.getStatHistory( statistic, historyDays ) );
-            return results;
+            return statisticsManager.getStatHistory( statistic, historyDays )
+                    .entrySet().stream().collect( Collectors.toUnmodifiableMap(
+                            entry -> entry.getKey().toString(),
+                            Map.Entry::getValue
+                    ) );
         }
 
-        public static Map<String, Object> doKeyStat( final StatisticsService statisticsManager, final String statKey )
+        public static Map<String, Object> doKeyStat( final StatisticsService statisticsManager, final String keyInput )
         {
-            final String key = ( statKey == null )
-                    ? StatisticsService.KEY_CUMULATIVE
-                    : statKey;
+            final StatisticsBundleKey key = StatisticsBundleKey.fromStringOrDefaultCumulative( keyInput );
 
-            final StatisticsBundle statisticsBundle = statisticsManager.getStatBundleForKey( key );
             final Map<String, Object> outputValueMap = new TreeMap<>();
-            for ( final Statistic stat : Statistic.values() )
+            statisticsManager.getStatBundleForKey( key ).ifPresent( statisticsBundle ->
             {
-                outputValueMap.put( stat.name(), statisticsBundle.getStatistic( stat ) );
-            }
-
-            return outputValueMap;
+                for ( final Statistic stat : Statistic.values() )
+                {
+                    outputValueMap.put( stat.getKey(), statisticsBundle.getStatistic( stat ) );
+                }
+            } );
+            return Collections.unmodifiableMap( outputValueMap );
         }
 
         public static Map<String, String> addEpsStats( final StatisticsService statisticsManager )

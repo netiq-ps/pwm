@@ -20,15 +20,15 @@
 
 package password.pwm.config.value;
 
-import com.google.gson.reflect.TypeToken;
+import org.jrivard.xmlchai.XmlElement;
+import org.jrivard.xmlchai.XmlFactory;
 import password.pwm.bean.EmailItemBean;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.stored.XmlOutputProcessData;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.secure.PwmSecurityKey;
 
 import java.util.ArrayList;
@@ -46,7 +46,9 @@ public class EmailValue extends AbstractValue implements StoredValue
 
     EmailValue( final Map<String, EmailItemBean> values )
     {
-        this.values = values == null ? Collections.emptyMap() : Collections.unmodifiableMap( values );
+        this.values = values == null
+                ? Collections.emptyMap()
+                : Collections.unmodifiableMap( CollectionUtil.stripNulls( values ) );
     }
 
     public static StoredValueFactory factory( )
@@ -54,7 +56,7 @@ public class EmailValue extends AbstractValue implements StoredValue
         return new StoredValueFactory()
         {
             @Override
-            public EmailValue fromJson( final String input )
+            public EmailValue fromJson( final PwmSetting pwmSetting, final String input )
             {
                 if ( input == null )
                 {
@@ -62,15 +64,8 @@ public class EmailValue extends AbstractValue implements StoredValue
                 }
                 else
                 {
-                    Map<String, EmailItemBean> srcList = JsonUtil.deserialize( input,
-                            new TypeToken<Map<String, EmailItemBean>>()
-                            {
-                            }
-                    );
-
-                    srcList = srcList == null ? Collections.emptyMap() : srcList;
-                    srcList.remove( null );
-                    return new EmailValue( Collections.unmodifiableMap( srcList ) );
+                    final Map<String, EmailItemBean> srcMap = JsonFactory.get().deserializeMap( input, String.class, EmailItemBean.class );
+                    return new EmailValue( srcMap );
                 }
             }
 
@@ -88,8 +83,8 @@ public class EmailValue extends AbstractValue implements StoredValue
                     {
                         loopValueElement.getText().ifPresent( value ->
                         {
-                            final String localeValue = loopValueElement.getAttributeValue( "locale" ).orElse( "" );
-                            values.put( localeValue, JsonUtil.deserialize( value, EmailItemBean.class ) );
+                            final String localeValue = loopValueElement.getAttribute( "locale" ).orElse( "" );
+                            values.put( localeValue, JsonFactory.get().deserialize( value, EmailItemBean.class ) );
                         } );
                     }
                 }
@@ -101,7 +96,7 @@ public class EmailValue extends AbstractValue implements StoredValue
     @Override
     public List<XmlElement> toXmlValues( final String valueElementName, final XmlOutputProcessData xmlOutputProcessData )
     {
-        final List<XmlElement> returnList = new ArrayList<>();
+        final List<XmlElement> returnList = new ArrayList<>( values.size() );
         for ( final Map.Entry<String, EmailItemBean> entry : values.entrySet() )
         {
             final String localeValue = entry.getKey();
@@ -111,7 +106,7 @@ public class EmailValue extends AbstractValue implements StoredValue
             {
                 valueElement.setAttribute( "locale", localeValue );
             }
-            valueElement.addText( JsonUtil.serialize( emailItemBean ) );
+            valueElement.setText( JsonFactory.get().serialize( emailItemBean ) );
             returnList.add( valueElement );
         }
         return returnList;
@@ -142,30 +137,30 @@ public class EmailValue extends AbstractValue implements StoredValue
             final EmailItemBean emailItemBean = entry.getValue();
             final Supplier<String> localeMsg = () -> loopLocale.length() > 0 ? " for locale " + loopLocale : "";
 
-            if ( emailItemBean.getSubject() == null || emailItemBean.getSubject().length() < 1 )
+            if ( StringUtil.isEmpty( emailItemBean.subject() ) )
             {
                 return Collections.singletonList( "subject field is required " + localeMsg.get() );
             }
 
-            if ( emailItemBean.getFrom() == null || emailItemBean.getFrom().length() < 1 )
+            if ( StringUtil.isEmpty( emailItemBean.from() ) )
             {
                 return Collections.singletonList( "from field is required" + localeMsg.get() );
             }
 
-            if ( StringUtil.isEmpty( emailItemBean.getBodyPlain() ) )
+            if ( StringUtil.isEmpty( emailItemBean.bodyPlain() ) )
             {
                 return Collections.singletonList( "plain body field is required" + localeMsg.get() );
             }
-            else if ( emailItemBean.getBodyPlain().length() > maxBodyChars )
+            else if ( emailItemBean.bodyPlain().length() > maxBodyChars )
             {
                 return Collections.singletonList( "plain body field is too large" + localeMsg.get()
-                        + ", chars=" + emailItemBean.getBodyPlain().length() + ", max=" + maxBodyChars );
+                        + ", chars=" + emailItemBean.bodyPlain().length() + ", max=" + maxBodyChars );
             }
 
-            if ( emailItemBean.getBodyHtml() != null && emailItemBean.getBodyHtml().length() > maxBodyChars )
+            if ( emailItemBean.bodyHtml() != null && emailItemBean.bodyHtml().length() > maxBodyChars )
             {
                 return Collections.singletonList( "html body field is too large" + localeMsg.get()
-                        + ", chars=" + emailItemBean.getBodyHtml().length() + ", max=" + maxBodyChars );
+                        + ", chars=" + emailItemBean.bodyHtml().length() + ", max=" + maxBodyChars );
             }
         }
 
@@ -185,11 +180,11 @@ public class EmailValue extends AbstractValue implements StoredValue
             final String localeKey = entry.getKey();
             final EmailItemBean emailItemBean = entry.getValue();
             sb.append( "EmailItem " ).append( LocaleHelper.debugLabel( LocaleHelper.parseLocaleString( localeKey ) ) ).append( ": \n" );
-            sb.append( "  To:" ).append( emailItemBean.getTo() ).append( "\n" );
-            sb.append( "From:" ).append( emailItemBean.getFrom() ).append( "\n" );
-            sb.append( "Subj:" ).append( emailItemBean.getSubject() ).append( "\n" );
-            sb.append( "Body:" ).append( emailItemBean.getBodyPlain() ).append( "\n" );
-            sb.append( "Html:" ).append( emailItemBean.getBodyHtml() ).append( "\n" );
+            sb.append( "  To:" ).append( emailItemBean.to() ).append( '\n' );
+            sb.append( "From:" ).append( emailItemBean.from() ).append( '\n' );
+            sb.append( "Subj:" ).append( emailItemBean.subject() ).append( '\n' );
+            sb.append( "Body:" ).append( emailItemBean.bodyPlain() ).append( '\n' );
+            sb.append( "Html:" ).append( emailItemBean.bodyHtml() ).append( '\n' );
         }
         return sb.toString();
     }

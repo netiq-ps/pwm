@@ -143,7 +143,7 @@ public abstract class AbstractPwmServlet extends HttpServlet implements PwmServl
                 }
                 catch ( final Exception e3 )
                 {
-                    e3.printStackTrace();
+                    LOGGER.warn( () -> "unhandled error: " + e3.getMessage(), e );
                 }
                 throw new ServletException( e );
             }
@@ -204,15 +204,7 @@ public abstract class AbstractPwmServlet extends HttpServlet implements PwmServl
             stackTraceText = errorStack.toString();
         }
 
-        String stackTraceHash = "hash";
-        try
-        {
-            stackTraceHash = SecureEngine.hash( stackTraceText, PwmHashAlgorithm.SHA1 );
-        }
-        catch ( final PwmUnrecoverableException e1 )
-        {
-            /* */
-        }
+        final String stackTraceHash = SecureEngine.hash( stackTraceText, PwmHashAlgorithm.SHA1 );
         final String errorMsg = "unexpected error processing request: " + JavaHelper.readHostileExceptionMessage( e ) + " [" + stackTraceHash + "]";
 
         LOGGER.error( pwmRequest, () -> errorMsg, e );
@@ -248,13 +240,13 @@ public abstract class AbstractPwmServlet extends HttpServlet implements PwmServl
                 }
                 catch ( final Throwable e1 )
                 {
-                    LOGGER.error( () -> "error while marking pre-login url:" + e1.getMessage() );
+                    LOGGER.error( pwmRequest, () -> "error while marking pre-login url:" + e1.getMessage() );
                 }
                 break;
 
             case ERROR_INTERNAL:
             default:
-                final Supplier<CharSequence> msg = () -> "unexpected error: " + e.getErrorInformation().toDebugStr();
+                final Supplier<String> msg = () -> "unexpected error: " + e.getErrorInformation().toDebugStr();
                 final PwmLogLevel level = e.getError().isTrivial() ? PwmLogLevel.TRACE : PwmLogLevel.ERROR;
                 LOGGER.log( level, pwmRequest.getLabel(), msg );
                 StatisticsClient.incrementStat( pwmRequest, Statistic.PWM_UNKNOWN_ERRORS );
@@ -272,6 +264,7 @@ public abstract class AbstractPwmServlet extends HttpServlet implements PwmServl
         {
             final RestResultBean restResultBean = RestResultBean.fromError( e.getErrorInformation(), pwmRequest );
             pwmRequest.outputJsonResult( restResultBean );
+            pwmRequest.getPwmResponse().setStatus( 500 );
         }
         else
         {
@@ -300,11 +293,13 @@ public abstract class AbstractPwmServlet extends HttpServlet implements PwmServl
 
     public String servletUriRemainder( final PwmRequest pwmRequest, final String command ) throws PwmUnrecoverableException
     {
-        String uri = pwmRequest.getURLwithoutQueryString();
-        if ( uri.startsWith( pwmRequest.getBasePath() ) )
+        final String basePath = pwmRequest.getBasePath();
+        String uri = pwmRequest.getBasePath();
+        if ( uri.startsWith( basePath ) )
         {
-            uri = uri.substring( pwmRequest.getBasePath().length() );
+            uri = uri.substring( basePath.length() );
         }
+
         for ( final String servletUri : getServletDefinition().urlPatterns() )
         {
             if ( uri.startsWith( servletUri ) )

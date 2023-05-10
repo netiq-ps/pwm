@@ -21,30 +21,33 @@
 package password.pwm.util.cli.commands;
 
 import password.pwm.bean.SessionLabel;
-import password.pwm.config.stored.ConfigurationReader;
+import password.pwm.config.stored.ConfigurationFileManager;
 import password.pwm.config.stored.StoredConfiguration;
 import password.pwm.config.stored.StoredConfigurationModifier;
+import password.pwm.error.PwmOperationalException;
+import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.PasswordData;
 import password.pwm.util.cli.CliParameters;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.secure.HttpsServerCertificateManager;
 
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 
 public class ImportHttpsKeyStoreCommand extends AbstractCliCommand
 {
-
     private static final String ALIAS_OPTIONNAME = "alias";
     private static final String FORMAT_OPTIONNAME = "format";
 
     @Override
     void doCommand( )
-            throws Exception
+            throws IOException, PwmUnrecoverableException, PwmOperationalException
     {
-        final File inputFile = ( File ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_EXISTING_INPUT_FILE.getName() );
-        if ( inputFile == null || !inputFile.exists() )
+        final Path inputFile = ( Path ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_EXISTING_INPUT_FILE.getName() );
+        if ( inputFile == null || !Files.exists( inputFile ) )
         {
             out( CliParameters.REQUIRED_EXISTING_INPUT_FILE.getName() + " does not exist" );
             return;
@@ -64,11 +67,13 @@ public class ImportHttpsKeyStoreCommand extends AbstractCliCommand
         final String keyStorePassword = getOptionalPassword();
         final String inputAliasName = ( String ) cliEnvironment.getOptions().get( ALIAS_OPTIONNAME );
 
-        final ConfigurationReader configurationReader = new ConfigurationReader( cliEnvironment.getConfigurationFile() );
-        final StoredConfiguration storedConfiguration = configurationReader.getStoredConfiguration();
+        final ConfigurationFileManager configurationFileManager = new ConfigurationFileManager(
+                cliEnvironment.getConfigurationFile(),
+                SessionLabel.CLI_SESSION_LABEL );
+        final StoredConfiguration storedConfiguration = configurationFileManager.getStoredConfiguration();
         final StoredConfigurationModifier modifier = StoredConfigurationModifier.newModifier( storedConfiguration );
 
-        try ( FileInputStream fileInputStream = new FileInputStream( inputFile ) )
+        try ( InputStream fileInputStream = Files.newInputStream( inputFile ) )
         {
             HttpsServerCertificateManager.importKey(
                     modifier,
@@ -84,55 +89,15 @@ public class ImportHttpsKeyStoreCommand extends AbstractCliCommand
             return;
         }
 
-        configurationReader.saveConfiguration( modifier.newStoredConfiguration(), cliEnvironment.getPwmApplication(), SessionLabel.CLI_SESSION_LABEL );
+        configurationFileManager.saveConfiguration( modifier.newStoredConfiguration(), cliEnvironment.getPwmApplication() );
         out( "success: keystore has been imported" );
     }
 
     @Override
     public CliParameters getCliParameters( )
     {
-
-        final CliParameters.Option aliasValueOption = new CliParameters.Option()
-        {
-            @Override
-            public boolean isOptional( )
-            {
-                return false;
-            }
-
-            @Override
-            public Type getType( )
-            {
-                return Type.STRING;
-            }
-
-            @Override
-            public String getName( )
-            {
-                return ALIAS_OPTIONNAME;
-            }
-        };
-
-        final CliParameters.Option formatValueOption = new CliParameters.Option()
-        {
-            @Override
-            public boolean isOptional( )
-            {
-                return false;
-            }
-
-            @Override
-            public Type getType( )
-            {
-                return Type.STRING;
-            }
-
-            @Override
-            public String getName( )
-            {
-                return FORMAT_OPTIONNAME;
-            }
-        };
+        final CliParameters.Option aliasValueOption = CliParameters.newRequiredStringOption( ALIAS_OPTIONNAME );
+        final CliParameters.Option formatValueOption = CliParameters.newRequiredStringOption( FORMAT_OPTIONNAME );
 
         final CliParameters cliParameters = new CliParameters();
         cliParameters.commandName = "ImportHttpsKeyStore";

@@ -30,18 +30,18 @@ import password.pwm.error.PwmError;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.ldap.LdapOperationsHelper;
-import password.pwm.ldap.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.ldap.permission.UserPermissionUtility;
 import password.pwm.svc.PwmService;
 import password.pwm.svc.node.NodeService;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
+import password.pwm.user.UserInfo;
 import password.pwm.util.PwmScheduler;
 import password.pwm.util.i18n.LocaleHelper;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.ConditionalTaskExecutor;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
@@ -51,21 +51,17 @@ import java.io.Writer;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class PwNotifyEngine
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( PwNotifyEngine.class );
 
-    private static final int MAX_LOG_SIZE = 1024 * 1024 * 1024;
+    private static final int MAX_LOG_SIZE = 10_1024_1024;
 
     private final PwNotifyService pwNotifyService;
     private final PwNotifySettings settings;
@@ -77,7 +73,7 @@ public class PwNotifyEngine
 
     private final ConditionalTaskExecutor debugOutputTask = ConditionalTaskExecutor.forPeriodicTask(
             this::periodicDebugOutput,
-            TimeDuration.MINUTE
+            TimeDuration.MINUTE.asDuration()
     );
 
     private final AtomicInteger examinedCount = new AtomicInteger( 0 );
@@ -156,7 +152,7 @@ public class PwNotifyEngine
             }
 
             log( "starting job, beginning ldap search" );
-            final Iterator<UserIdentity> workQueue = UserPermissionUtility.discoverMatchingUsers(
+            final List<UserIdentity> matchingUsers = UserPermissionUtility.discoverMatchingUsers(
                     pwmDomain,
                     permissionList, pwNotifyService.getSessionLabel(), settings.getMaxLdapSearchSize(),
                     settings.getSearchTimeout()
@@ -165,7 +161,7 @@ public class PwNotifyEngine
             log( "ldap search complete, examining users..." );
 
             final ThreadPoolExecutor threadPoolExecutor = createExecutor( pwmDomain );
-            while ( workQueue.hasNext() )
+            for ( final UserIdentity userIdentity : matchingUsers )
             {
                 if ( !checkIfRunningOnMaster() || pwNotifyService.status() == PwmService.STATUS.CLOSED )
                 {
@@ -174,10 +170,10 @@ public class PwNotifyEngine
                     throw PwmUnrecoverableException.newException( PwmError.ERROR_SERVICE_NOT_AVAILABLE, msg );
                 }
 
-                threadPoolExecutor.submit( new ProcessJob( workQueue.next() ) );
+                threadPoolExecutor.submit( new ProcessJob( userIdentity ) );
             }
 
-            JavaHelper.closeAndWaitExecutor( threadPoolExecutor, TimeDuration.DAY );
+            PwmScheduler.closeAndWaitExecutor( threadPoolExecutor, TimeDuration.DAY, LOGGER, pwNotifyService.getSessionLabel() );
 
             log( "job complete, " + examinedCount + " users evaluated in " + TimeDuration.fromCurrent( startTime ).asCompactString()
                     + ", sent " + noticeCount + " notices."
@@ -344,7 +340,7 @@ public class PwNotifyEngine
 
     private void log( final String output )
     {
-        final String msg = JavaHelper.toIsoDate( Instant.now() )
+        final String msg = StringUtil.toIsoDate( Instant.now() )
                 + " "
                 + output
                 + "\n";
@@ -381,16 +377,10 @@ public class PwNotifyEngine
 
     private ThreadPoolExecutor createExecutor( final PwmDomain pwmDomain )
     {
-        final ThreadFactory threadFactory = PwmScheduler.makePwmThreadFactory( PwmScheduler.makeThreadName( pwmDomain.getPwmApplication(), this.getClass() ), true );
-        final ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-                1,
+        return PwmScheduler.makeMultiThreadExecutor(
                 10,
-                1,
-                TimeUnit.MINUTES,
-                new LinkedBlockingDeque<>(),
-                threadFactory
-        );
-        threadPoolExecutor.allowCoreThreadTimeOut( true );
-        return threadPoolExecutor;
+                pwmDomain.getPwmApplication(),
+                pwNotifyService.getSessionLabel(),
+                PwNotifyEngine.class );
     }
 }

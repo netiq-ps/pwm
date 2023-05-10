@@ -28,8 +28,10 @@
 <%@ page import="password.pwm.util.i18n.LocaleHelper" %>
 <%@ page import="password.pwm.util.java.JavaHelper" %>
 <%@ page import="password.pwm.http.PwmRequestAttribute" %>
-<%@ page import="password.pwm.http.servlet.configmanager.ConfigManagerServlet" %>
-<%@ page import="password.pwm.http.servlet.configmanager.ConfigManagerLoginServlet" %>
+<%@ page import="password.pwm.http.servlet.admin.system.ConfigManagerServlet" %>
+<%@ page import="password.pwm.http.servlet.admin.system.ConfigManagerLoginServlet" %>
+<%@ page import="password.pwm.util.java.PwmUtil" %>
+<%@ page import="password.pwm.util.java.StringUtil" %>
 
 <!DOCTYPE html>
 
@@ -56,7 +58,7 @@
         <form action="<pwm:current-url/>" method="post" id="configLogin" name="configLogin" enctype="application/x-www-form-urlencoded"
               class="pwm-form">
             <div>
-            <h1>Configuration Password</h1>
+                <h1><label for="password">Configuration Password</label></h1>
             <input type="<pwm:value name="<%=PwmValue.passwordFieldType%>"/>" class="inputfield passwordfield" name="password" id="password" placeholder="<pwm:display key="Field_Password"/>" <pwm:autofocus/>/>
             </div>
             <% if ( (Boolean)pwmRequest.getAttribute( PwmRequestAttribute.ConfigEnablePersistentLogin ) ) { %>
@@ -89,7 +91,7 @@
             <% for (final ConfigManagerLoginServlet.ConfigLoginEvent event : configLoginHistory.successEvents()) { %>
             <tr>
                 <td><%=event.getUserIdentity()%></td>
-                <td><span  class="timestamp"><%=JavaHelper.toIsoDate(event.getDate())%></span></td>
+                <td><span  class="timestamp"><%=StringUtil.toIsoDate(event.getDate())%></span></td>
                 <td><%=event.getNetworkAddress()%></td>
             </tr>
             <% } %>
@@ -107,7 +109,7 @@
             <% for (final ConfigManagerLoginServlet.ConfigLoginEvent event : configLoginHistory.failedEvents()) { %>
             <tr>
                 <td><%=event.getUserIdentity()%></td>
-                <td><span  class="timestamp"><%=JavaHelper.toIsoDate(event.getDate())%></span></td>
+                <td><span  class="timestamp"><%=StringUtil.toIsoDate(event.getDate())%></span></td>
                 <td><%=event.getNetworkAddress()%></td>
             </tr>
             <% } %>

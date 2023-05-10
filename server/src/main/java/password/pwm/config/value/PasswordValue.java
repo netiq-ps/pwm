@@ -21,22 +21,22 @@
 package password.pwm.config.value;
 
 
+import org.jrivard.xmlchai.XmlElement;
+import org.jrivard.xmlchai.XmlFactory;
 import password.pwm.PwmConstants;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.stored.StoredConfigXmlConstants;
 import password.pwm.config.stored.XmlOutputProcessData;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
+import password.pwm.error.PwmInternalException;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.PasswordData;
-import password.pwm.util.java.JsonUtil;
 import password.pwm.util.java.LazySupplier;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.secure.PwmSecurityKey;
 
-import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -44,9 +44,7 @@ import java.util.Optional;
 
 public class PasswordValue implements StoredValue
 {
-    private static final long serialVersionUID = 1L;
-
-    private final transient LazySupplier<String> valueHashSupplier = new LazySupplier<>( () -> AbstractValue.valueHashComputer( PasswordValue.this ) );
+    private final transient LazySupplier<String> valueHashSupplier = LazySupplier.create( () -> AbstractValue.valueHashComputer( PasswordValue.this ) );
 
     private final PasswordData value;
 
@@ -65,9 +63,9 @@ public class PasswordValue implements StoredValue
         return new StoredValueFactory()
         {
             @Override
-            public PasswordValue fromJson( final String value )
+            public PasswordValue fromJson( final PwmSetting pwmSetting, final String value )
             {
-                final String strValue = JsonUtil.deserialize( value, String.class );
+                final String strValue = JsonFactory.get().deserialize( value, String.class );
                 if ( strValue != null && !strValue.isEmpty() )
                 {
                     try
@@ -101,7 +99,7 @@ public class PasswordValue implements StoredValue
                         return new PasswordValue();
                     }
 
-                    final boolean plainTextSetting = valueElement.get().getAttributeValue( "plaintext" )
+                    final boolean plainTextSetting = valueElement.get().getAttribute( "plaintext" )
                             .map( Boolean::parseBoolean )
                             .orElse( false );
 
@@ -170,11 +168,11 @@ public class PasswordValue implements StoredValue
                     xmlOutputProcessData.getStoredValueEncoderMode(),
                     xmlOutputProcessData.getPwmSecurityKey() );
 
-            valueElement.addText( encodedValue );
+            valueElement.setText( encodedValue );
         }
         catch ( final Exception e )
         {
-            throw new RuntimeException( "missing required AES and SHA1 libraries, or other crypto fault: " + e.getMessage() );
+            throw new PwmInternalException( "missing required AES and SHA1 libraries, or other crypto fault: " + e.getMessage() );
         }
         return Collections.singletonList( valueElement );
     }
@@ -191,7 +189,7 @@ public class PasswordValue implements StoredValue
     }
 
     @Override
-    public Serializable toDebugJsonObject( final Locale locale )
+    public Object toDebugJsonObject( final Locale locale )
     {
         return PwmConstants.LOG_REMOVED_VALUE_REPLACEMENT;
     }

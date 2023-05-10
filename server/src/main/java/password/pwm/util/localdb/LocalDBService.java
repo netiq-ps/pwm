@@ -28,7 +28,6 @@ import password.pwm.error.PwmException;
 import password.pwm.health.HealthRecord;
 import password.pwm.svc.PwmService;
 
-import java.io.Serializable;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,6 +52,12 @@ public class LocalDBService implements PwmService
     }
 
     @Override
+    public String name()
+    {
+        return LocalDBService.class.getSimpleName();
+    }
+
+    @Override
     public void init( final PwmApplication pwmApplication, final DomainID domainID ) throws PwmException
     {
         this.pwmApplication = pwmApplication;
@@ -72,7 +77,7 @@ public class LocalDBService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdown( )
     {
         //no-op
     }
@@ -89,8 +94,8 @@ public class LocalDBService implements PwmService
         final Map<String, String> returnInfo = new LinkedHashMap<>();
         if ( status() == STATUS.OPEN )
         {
-            final Map<String, Serializable> localDbInfo = pwmApplication.getLocalDB().debugInfo();
-            for ( final Map.Entry<String, Serializable> entry : localDbInfo.entrySet() )
+            final Map<String, Object> localDbInfo = pwmApplication.getLocalDB().debugInfo();
+            for ( final Map.Entry<String, Object> entry : localDbInfo.entrySet() )
             {
                 returnInfo.put( entry.getKey(), String.valueOf( entry.getValue() ) );
             }

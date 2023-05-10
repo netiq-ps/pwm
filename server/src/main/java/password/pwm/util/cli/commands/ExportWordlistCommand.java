@@ -25,27 +25,29 @@ import password.pwm.util.cli.CliParameters;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBUtility;
 
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 
 public class ExportWordlistCommand extends AbstractCliCommand
 {
     @Override
     void doCommand( )
-            throws Exception
+            throws IOException
     {
         final LocalDB localDB = cliEnvironment.getLocalDB();
 
-        final File outputFile = ( File ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_NEW_OUTPUT_FILE.getName() );
-        if ( outputFile.exists() )
+        final Path outputFile = ( Path ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_NEW_OUTPUT_FILE.getName() );
+        if ( Files.exists( outputFile ) )
         {
             out( "outputFile for ExportWordlist cannot already exist" );
             return;
         }
 
         final LocalDBUtility localDBUtility = new LocalDBUtility( localDB );
-        try ( FileOutputStream fileOutputStream = new FileOutputStream( outputFile ) )
+        try ( OutputStream fileOutputStream = Files.newOutputStream( outputFile ) )
         {
             localDBUtility.exportWordlist( fileOutputStream, System.out );
         }

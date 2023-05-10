@@ -32,7 +32,6 @@
 <%@ page import="password.pwm.util.java.StringUtil" %>
 <%@ page import="java.util.*" %>
 <%@ page import="password.pwm.util.macro.MacroRequest" %>
-<%@ page import="com.novell.ldapchai.util.StringHelper" %>
 <%@ page import="password.pwm.AppProperty" %>
 <%@ page import="password.pwm.config.PwmSettingStats" %>
 
@@ -151,6 +150,14 @@
                     </td>
                     <td>
                         <%= LocaleHelper.booleanString(setting.isConfidential(),pwmRequest) %>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="key" style="width: 100px">
+                        Scope
+                    </td>
+                    <td>
+                        <%= setting.getCategory().getScope() %>
                     </td>
                 </tr>
                 <% if (setting.getSyntax() == PwmSettingSyntax.OPTIONLIST || setting.getSyntax() == PwmSettingSyntax.SELECT) { %>

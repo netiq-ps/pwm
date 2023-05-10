@@ -25,15 +25,14 @@ import password.pwm.PwmConstants;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmOperationalException;
-import password.pwm.util.java.JsonUtil;
 import password.pwm.util.java.StringUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.secure.PwmBlockAlgorithm;
 import password.pwm.util.secure.PwmRandom;
 import password.pwm.util.secure.PwmSecurityKey;
 import password.pwm.util.secure.SecureEngine;
 
-import java.io.Serializable;
 import java.util.List;
 import java.util.Optional;
 
@@ -51,6 +50,7 @@ public abstract class StoredValueEncoder
         ENCODED( new EncodedModeEngine(), "ENC-PW" + DELIMITER, "ENCODED" + DELIMITER ),;
 
         private final List<String> prefixes;
+
         private final SecureOutputEngine secureOutputEngine;
 
         Mode( final SecureOutputEngine secureOutputEngine, final String... prefixes )
@@ -66,7 +66,7 @@ public abstract class StoredValueEncoder
 
         public String getPrefix()
         {
-            return prefixes.iterator().next();
+            return prefixes.get( 0 );
         }
 
         public SecureOutputEngine getSecureOutputEngine()
@@ -198,7 +198,7 @@ public abstract class StoredValueEncoder
             {
                 final String errorMsg = "unable to decrypt config password value for setting: " + e.getMessage();
                 final ErrorInformation errorInfo = new ErrorInformation( PwmError.CONFIG_FORMAT_ERROR, errorMsg );
-                LOGGER.warn( () -> errorInfo.toDebugStr() );
+                LOGGER.warn( errorInfo::toDebugStr );
                 throw new PwmOperationalException( errorInfo );
             }
         }
@@ -221,7 +221,7 @@ public abstract class StoredValueEncoder
                 {
                     final String salt = PwmRandom.getInstance().alphaNumericString( 32 );
                     final StoredPwData storedPwData = new StoredPwData( salt, rawValue );
-                    final String jsonData = JsonUtil.serialize( storedPwData );
+                    final String jsonData = JsonFactory.get().serialize( storedPwData );
                     final String encryptedValue = SecureEngine.encryptToString( jsonData, pwmSecurityKey, PwmBlockAlgorithm.CONFIG );
                     return Mode.ENCODED.getPrefix() + encryptedValue;
                 }
@@ -243,21 +243,21 @@ public abstract class StoredValueEncoder
             {
                 final String pwValueSuffix = input.getValue( );
                 final String decryptedValue = SecureEngine.decryptStringValue( pwValueSuffix, pwmSecurityKey, PwmBlockAlgorithm.CONFIG );
-                final StoredPwData storedPwData = JsonUtil.deserialize( decryptedValue, StoredPwData.class );
+                final StoredPwData storedPwData = JsonFactory.get().deserialize( decryptedValue, StoredPwData.class );
                 return storedPwData.getValue();
             }
             catch ( final Exception e )
             {
                 final String errorMsg = "unable to decrypt password value for setting: " + e.getMessage();
                 final ErrorInformation errorInfo = new ErrorInformation( PwmError.CONFIG_FORMAT_ERROR, errorMsg );
-                LOGGER.warn( () -> errorInfo.toDebugStr() );
+                LOGGER.warn( errorInfo::toDebugStr );
                 throw new PwmOperationalException( errorInfo );
             }
         }
     }
 
     @Value
-    private static class StoredPwData implements Serializable
+    private static class StoredPwData
     {
         private String salt;
         private String value;

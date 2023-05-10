@@ -20,7 +20,6 @@
 
 package password.pwm.svc.stats;
 
-import org.apache.commons.csv.CSVPrinter;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
 import password.pwm.bean.DomainID;
@@ -29,28 +28,27 @@ import password.pwm.error.PwmException;
 import password.pwm.health.HealthRecord;
 import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
+import password.pwm.util.DailySummaryJob;
 import password.pwm.util.EventRateMeter;
-import password.pwm.util.PwmScheduler;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.CollectorUtil;
+import password.pwm.util.java.EnumUtil;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBException;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.IOException;
-import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.SortedSet;
 import java.util.TimerTask;
-import java.util.concurrent.ExecutorService;
+import java.util.stream.Collectors;
 
 public class StatisticsService extends AbstractPwmService implements PwmService
 {
@@ -66,136 +64,120 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
     private static final String DB_VALUE_VERSION = "1";
 
-    public static final String KEY_CURRENT = "CURRENT";
-    public static final String KEY_CUMULATIVE = "CUMULATIVE";
-
     private LocalDB localDB;
 
-    private DailyKey currentDailyKey = DailyKey.forToday();
-    private DailyKey initialDailyKey = DailyKey.forToday();
-
-    private ExecutorService executorService;
+    private StatisticsBundleKey currentDailyKey = StatisticsBundleKey.forToday();
+    private StatisticsBundleKey initialDailyKey = StatisticsBundleKey.forToday();
 
     private final StatisticsBundle statsCurrent = new StatisticsBundle();
+    private final Map<EpsKey, EventRateMeter> epsMeterMap;
     private StatisticsBundle statsDaily = new StatisticsBundle();
-    private StatisticsBundle statsCummulative = new StatisticsBundle();
-    private Map<EpsKey, EventRateMeter> epsMeterMap = new HashMap<>();
+    private StatisticsBundle statsCumulative = new StatisticsBundle();
 
-
-    private final Map<String, StatisticsBundle> cachedStoredStats = new LinkedHashMap<>()
-    {
-        @Override
-        protected boolean removeEldestEntry( final Map.Entry<String, StatisticsBundle> eldest )
-        {
-            return this.size() > 50;
-        }
-    };
 
     public StatisticsService( )
     {
-        for ( final EpsKey epsKey : EpsKey.allKeys() )
-        {
-            epsMeterMap.put( epsKey, new EventRateMeter( epsKey.getEpsDuration().getTimeDuration() ) );
-        }
+        epsMeterMap = EpsKey.allKeys().stream()
+                .map( key -> Map.entry( key, new EventRateMeter( key.epsDuration().getTimeDuration().asDuration() ) ) )
+                .collect( Collectors.toUnmodifiableMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue ) );
     }
 
     public void incrementValue( final Statistic statistic )
     {
         statsCurrent.incrementValue( statistic );
         statsDaily.incrementValue( statistic );
-        statsCummulative.incrementValue( statistic );
+        statsCumulative.incrementValue( statistic );
     }
 
     public void updateAverageValue( final AvgStatistic statistic, final long value )
     {
         statsCurrent.updateAverageValue( statistic, value );
         statsDaily.updateAverageValue( statistic, value );
-        statsCummulative.updateAverageValue( statistic, value );
+        statsCumulative.updateAverageValue( statistic, value );
     }
 
-    public Map<String, String> getStatHistory( final Statistic statistic, final int days )
+    public Map<StatisticsBundleKey, String> getStatHistory( final Statistic statistic, final int days )
     {
-        final Map<String, String> returnMap = new LinkedHashMap<>();
-        DailyKey loopKey = currentDailyKey;
+        final Map<StatisticsBundleKey, String> returnMap = new LinkedHashMap<>();
+        StatisticsBundleKey loopKey = currentDailyKey;
         int counter = days;
         while ( counter > 0 )
         {
-            final StatisticsBundle bundle = getStatBundleForKey( loopKey.toString() );
-            if ( bundle != null )
+            final StatisticsBundleKey finalKey = loopKey;
+            getStatBundleForKey( loopKey ).ifPresent( bundle ->
             {
-                final String key = loopKey.toString();
                 final String value = bundle.getStatistic( statistic );
-                returnMap.put( key, value );
-            }
+                returnMap.put( finalKey, value );
+            } );
+
             loopKey = loopKey.previous();
             counter--;
         }
         return returnMap;
     }
 
-    public StatisticsBundle getStatBundleForKey( final String key )
+    public StatisticsBundle getCumulativeBundle()
     {
-        if ( key == null || key.length() < 1 || KEY_CUMULATIVE.equals( key ) )
+        return getStatBundleForKey( StatisticsBundleKey.CUMULATIVE ).orElseThrow();
+    }
+
+    public StatisticsBundle getCurrentBundle()
+    {
+        return getStatBundleForKey( StatisticsBundleKey.CURRENT ).orElseThrow();
+    }
+
+    public Optional<StatisticsBundle> getStatBundleForKey( final StatisticsBundleKey key )
+    {
+        Objects.requireNonNull( key );
+
+        if ( StatisticsBundleKey.CUMULATIVE == key )
         {
-            return statsCummulative;
+            return Optional.of( statsCumulative );
         }
 
-        if ( KEY_CURRENT.equals( key ) )
+        if ( StatisticsBundleKey.CURRENT == key )
         {
-            return statsCurrent;
+            return Optional.of( statsCurrent );
         }
 
-        if ( currentDailyKey.toString().equals( key ) )
+        if ( Objects.equals( currentDailyKey, key ) )
         {
-            return statsDaily;
-        }
-
-        if ( cachedStoredStats.containsKey( key ) )
-        {
-            return cachedStoredStats.get( key );
+            return Optional.of( statsDaily );
         }
 
         if ( localDB == null )
         {
-            return null;
+            return Optional.empty();
         }
 
         try
         {
-            final Optional<String> storedStat = localDB.get( LocalDB.DB.PWM_STATS, key );
-            final StatisticsBundle returnBundle;
-            returnBundle = storedStat.map( StatisticsBundle::input ).orElseGet( StatisticsBundle::new );
-            cachedStoredStats.put( key, returnBundle );
-            return returnBundle;
+            final Optional<String> storedStat = localDB.get( LocalDB.DB.PWM_STATS, key.toString() );
+            return storedStat.map( StatisticsBundle::input );
         }
         catch ( final LocalDBException e )
         {
             LOGGER.error( () -> "error retrieving stored stat for " + key + ": " + e.getMessage() );
         }
 
-        return null;
+        return Optional.empty();
     }
 
-    public Map<DailyKey, String> getAvailableKeys( final Locale locale )
+    StatisticsBundleKey getCurrentDailyKey()
     {
-        final Map<DailyKey, String> returnMap = new LinkedHashMap<>();
+        return currentDailyKey;
+    }
 
-        // if no historical data then we're done
-        if ( currentDailyKey.equals( initialDailyKey ) )
-        {
-            return returnMap;
-        }
+    StatisticsBundleKey getInitialDailyKey()
+    {
+        return initialDailyKey;
+    }
 
-        DailyKey loopKey = currentDailyKey;
-        int safetyCounter = 0;
-        while ( !loopKey.equals( initialDailyKey ) && safetyCounter < 5000 )
-        {
-            final String display = loopKey.toString();
-            returnMap.put( loopKey, display );
-            loopKey = loopKey.previous();
-            safetyCounter++;
-        }
-        return returnMap;
+    public SortedSet<StatisticsBundleKey> allKeys()
+    {
+        return StatisticsUtils.allKeys( this );
     }
 
     public String toString( )
@@ -204,8 +186,8 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
         for ( final Statistic m : Statistic.values() )
         {
-            sb.append( m.toString() );
-            sb.append( "=" );
+            sb.append( m );
+            sb.append( '=' );
             sb.append( statsCurrent.getStatistic( m ) );
             sb.append( ", " );
         }
@@ -236,29 +218,29 @@ public class StatisticsService extends AbstractPwmService implements PwmService
             {
                 try
                 {
-                    statsCummulative = StatisticsBundle.input( storedCumulativeBundleSir.get() );
+                    statsCumulative = StatisticsBundle.input( storedCumulativeBundleSir.get() );
                 }
                 catch ( final Exception e )
                 {
-                    LOGGER.warn( () -> "error loading saved stored cumulative statistics: " + e.getMessage() );
+                    LOGGER.warn( getSessionLabel(), () -> "error loading saved stored cumulative statistics: " + e.getMessage() );
                 }
             }
         }
 
         {
             final Optional<String> storedInitialString = localDB.get( LocalDB.DB.PWM_STATS, DB_KEY_INITIAL_DAILY_KEY );
-            storedInitialString.ifPresent( s -> initialDailyKey = new DailyKey( s ) );
+            storedInitialString.ifPresent( s -> initialDailyKey = StatisticsBundleKey.fromString( s ) );
         }
 
         {
-            currentDailyKey = DailyKey.forToday();
+            currentDailyKey = StatisticsBundleKey.forToday();
             final Optional<String> storedDailyStr = localDB.get( LocalDB.DB.PWM_STATS, currentDailyKey.toString() );
             storedDailyStr.ifPresent( s -> statsDaily = StatisticsBundle.input( s ) );
         }
 
         try
         {
-            localDB.put( LocalDB.DB.PWM_STATS, DB_KEY_TEMP, JavaHelper.toIsoDate( Instant.now() ) );
+            localDB.put( LocalDB.DB.PWM_STATS, DB_KEY_TEMP, StringUtil.toIsoDate( Instant.now() ) );
         }
         catch ( final IllegalStateException e )
         {
@@ -271,9 +253,9 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
         {
             // setup a timer to roll over at 0 Zulu and one to write current stats regularly
-            executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, this.getClass() );
-            pwmApplication.getPwmScheduler().scheduleFixedRateJob( new FlushTask(), executorService, DB_WRITE_FREQUENCY, DB_WRITE_FREQUENCY );
-            pwmApplication.getPwmScheduler().scheduleDailyZuluZeroStartJob( new NightlyTask(), executorService, TimeDuration.ZERO );
+            scheduleDailyZuluZeroStartJob( new DailySummaryJob( pwmApplication ), TimeDuration.ZERO );
+            scheduleFixedRateJob( new FlushTask(), DB_WRITE_FREQUENCY, DB_WRITE_FREQUENCY );
+            scheduleDailyZuluZeroStartJob( new NightlyTask(), TimeDuration.ZERO );
         }
 
         return STATUS.OPEN;
@@ -286,7 +268,7 @@ public class StatisticsService extends AbstractPwmService implements PwmService
             try
             {
                 final Map<String, String> dbData = new LinkedHashMap<>();
-                dbData.put( DB_KEY_CUMULATIVE, statsCummulative.output() );
+                dbData.put( DB_KEY_CUMULATIVE, statsCumulative.output() );
                 dbData.put( currentDailyKey.toString(), statsDaily.output() );
                 localDB.putAll( LocalDB.DB.PWM_STATS, dbData );
             }
@@ -299,26 +281,21 @@ public class StatisticsService extends AbstractPwmService implements PwmService
 
     public Map<String, String> dailyStatisticsAsLabelValueMap()
     {
-        final Map<String, String> emailValues = new LinkedHashMap<>();
-        for ( final Statistic statistic : Statistic.values() )
-        {
-            final String key = statistic.getLabel( PwmConstants.DEFAULT_LOCALE );
-            final String value = statsDaily.getStatistic( statistic );
-            emailValues.put( key, value );
-        }
-
-        return Collections.unmodifiableMap( emailValues );
+        return EnumUtil.enumStream( Statistic.class )
+                .collect( CollectorUtil.toUnmodifiableLinkedMap(
+                        statistic -> statistic.getLabel( PwmConstants.DEFAULT_LOCALE ),
+                        statistic -> statsDaily.getStatistic( statistic ) ) );
     }
 
     private void resetDailyStats( )
     {
-        currentDailyKey = DailyKey.forToday();
+        currentDailyKey = StatisticsBundleKey.forToday();
         statsDaily = new StatisticsBundle();
         LOGGER.debug( () -> "reset daily statistics" );
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         try
         {
@@ -329,8 +306,6 @@ public class StatisticsService extends AbstractPwmService implements PwmService
             LOGGER.error( () -> "unexpected error closing: " + e.getMessage() );
         }
 
-        JavaHelper.closeAndWaitExecutor( executorService, TimeDuration.of( 3, TimeDuration.Unit.SECONDS ) );
-
         setStatus( STATUS.CLOSED );
     }
 
@@ -339,7 +314,6 @@ public class StatisticsService extends AbstractPwmService implements PwmService
     {
         return Collections.emptyList();
     }
-
 
     private class NightlyTask extends TimerTask
     {
@@ -372,56 +346,7 @@ public class StatisticsService extends AbstractPwmService implements PwmService
     public BigDecimal readEps( final EpsStatistic type, final Statistic.EpsDuration duration )
     {
         final EpsKey epsKey = new EpsKey( type, duration );
-        return epsMeterMap.get( epsKey ).readEventRate();
-    }
-
-
-    public int outputStatsToCsv( final OutputStream outputStream, final Locale locale, final boolean includeHeader )
-            throws IOException
-    {
-        LOGGER.trace( () -> "beginning output stats to csv process" );
-        final Instant startTime = Instant.now();
-
-        final StatisticsService statsManger = getPwmApplication().getStatisticsManager();
-        final CSVPrinter csvPrinter = JavaHelper.makeCsvPrinter( outputStream );
-
-        if ( includeHeader )
-        {
-            final List<String> headers = new ArrayList<>();
-            headers.add( "KEY" );
-            headers.add( "YEAR" );
-            headers.add( "DAY" );
-            for ( final Statistic stat : Statistic.values() )
-            {
-                headers.add( stat.getLabel( locale ) );
-            }
-            csvPrinter.printRecord( headers );
-        }
-
-        int counter = 0;
-        final Map<DailyKey, String> keys = statsManger.getAvailableKeys( PwmConstants.DEFAULT_LOCALE );
-        for ( final DailyKey loopKey : keys.keySet() )
-        {
-            counter++;
-            final StatisticsBundle bundle = statsManger.getStatBundleForKey( loopKey.toString() );
-            final List<String> lineOutput = new ArrayList<>();
-            lineOutput.add( loopKey.toString() );
-            lineOutput.add( String.valueOf( loopKey.getYear() ) );
-            lineOutput.add( String.valueOf( loopKey.getDay() ) );
-            for ( final Statistic stat : Statistic.values() )
-            {
-                lineOutput.add( bundle.getStatistic( stat ) );
-            }
-            csvPrinter.printRecord( lineOutput );
-        }
-
-        csvPrinter.flush();
-        {
-            final int finalCounter = counter;
-            LOGGER.trace( () -> "completed output stats to csv process; output " + finalCounter + " records in "
-                    + TimeDuration.compactFromCurrent( startTime ) );
-        }
-        return counter;
+        return epsMeterMap.get( epsKey ).rawEps();
     }
 
     @Override

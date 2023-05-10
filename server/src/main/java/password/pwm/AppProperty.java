@@ -20,6 +20,10 @@
 
 package password.pwm;
 
+import password.pwm.util.java.EnumUtil;
+
+import java.util.Objects;
+import java.util.Optional;
 import java.util.ResourceBundle;
 
 /**
@@ -63,7 +67,6 @@ public enum AppProperty
     CLIENT_FORM_CLIENT_REGEX_ENABLED                ( "client.form.clientRegexEnable" ),
     CLIENT_WARNING_HEADER_SHOW                      ( "client.warningHeader.show" ),
     CLIENT_PW_SHOW_REVERT_TIMEOUT                   ( "client.pwShowRevertTimeout" ),
-    CLIENT_JS_ENABLE_HTML5DIALOG                    ( "client.js.enableHtml5Dialog" ),
     CLIENT_JSP_SHOW_ICONS                           ( "client.jsp.showIcons" ),
     CONFIG_MAX_FILEVALUE_SIZE                       ( "config.max.fileValue.size" ),
     CONFIG_RELOAD_ON_CHANGE                         ( "config.reloadOnChange" ),
@@ -76,6 +79,7 @@ public enum AppProperty
     CONFIG_EDITOR_BLOCK_OLD_IE                      ( "configEditor.blockOldIE" ),
     CONFIG_EDITOR_USER_PERMISSION_MATCH_LIMIT       ( "configEditor.userPermission.matchResultsLimit" ),
     CONFIG_EDITOR_IDLE_TIMEOUT                      ( "configEditor.idleTimeoutSeconds" ),
+    CONFIG_EDITOR_SETTING_FUNCTION_TIMEOUT_MS       ( "configEditor.settingFunction.timeoutMs" ),
     CONFIG_GUIDE_IDLE_TIMEOUT                       ( "configGuide.idleTimeoutSeconds" ),
     CONFIG_MANAGER_ZIPDEBUG_MAXLOGBYTES             ( "configManager.zipDebug.maxLogBytes" ),
     CONFIG_MANAGER_ZIPDEBUG_MAXLOGSECONDS           ( "configManager.zipDebug.maxLogSeconds" ),
@@ -205,6 +209,7 @@ public enum AppProperty
     HEALTH_CERTIFICATE_WARN_SECONDS                 ( "health.certificate.warnSeconds" ),
     HEALTH_DB_CAUTION_DURATION_MS                   ( "health.database.cautionDurationMS" ),
     HEALTH_LDAP_CAUTION_DURATION_MS                 ( "health.ldap.cautionDurationMS" ),
+    HEALTH_LDAP_ERROR_LIFETIME_MS                   ( "health.ldap.errorLifetimeMS" ),
     HEALTH_LDAP_PROXY_WARN_PW_EXPIRE_SECONDS        ( "health.ldap.proxy.pwExpireWarnSeconds" ),
     HEALTH_LDAP_USER_SEARCH_TERM                    ( "health.ldap.userSearch.searchTerm" ),
     HEALTH_LDAP_USER_SEARCH_WARN_MS                 ( "health.ldap.userSearch.warnMS" ),
@@ -222,7 +227,6 @@ public enum AppProperty
     LDAP_CHAI_SETTINGS                              ( "ldap.chaiSettings" ),
     LDAP_PROXY_CONNECTION_PER_PROFILE               ( "ldap.proxy.connectionsPerProfile" ),
     LDAP_PROXY_MAX_CONNECTIONS                      ( "ldap.proxy.maxConnections" ),
-    LDAP_PROXY_USE_THREAD_LOCAL                     ( "ldap.proxy.useThreadLocal" ),
     LDAP_PROXY_IDLE_THREAD_LOCAL_TIMEOUT_MS         ( "ldap.proxy.idleThreadLocal.timeoutMS" ),
     LDAP_EXTENSIONS_NMAS_ENABLE                     ( "ldap.extensions.nmas.enable" ),
     LDAP_CONNECTION_TIMEOUT                         ( "ldap.connection.timeoutMS" ),
@@ -240,11 +244,15 @@ public enum AppProperty
     LDAP_SEARCH_PARALLEL_FACTOR                     ( "ldap.search.parallel.factor" ),
     LDAP_SEARCH_PARALLEL_THREAD_MAX                 ( "ldap.search.parallel.threadMax" ),
     LDAP_ORACLE_POST_TEMPPW_USE_CURRENT_TIME        ( "ldap.oracle.postTempPasswordUseCurrentTime" ),
-    LOGGING_OUTPUT_CONFIGURATION                    ( "logging.outputConfiguration" ),
-    LOGGING_PATTERN                                 ( "logging.pattern" ),
+    LOGGING_OUTPUT_CONFIGURATION                    ( "logging.output.configuration.enable" ),
+    LOGGING_OUTPUT_HEALTHCHECK                      ( "logging.output.healthCheck.enable" ),
+    LOGGING_OUTPUT_RUNTIME                          ( "logging.output.runtime.enable" ),
+    LOGGING_OUTPUT_MODE                             ( "logging.logOutputMode" ),
+    LOGGING_PACKAGE_LIST                            ( "logging.packageList" ),
     LOGGING_EXTRA_PERIODIC_THREAD_DUMP_INTERVAL     ( "logging.extra.periodicThreadDumpIntervalSeconds" ),
-    LOGGING_FILE_MAX_SIZE                           ( "logging.file.maxSize" ),
-    LOGGING_FILE_MAX_ROLLOVER                       ( "logging.file.maxRollover" ),
+    LOGGING_FILE_MAX_FILE_SIZE                      ( "logging.file.maxFileSize" ),
+    LOGGING_FILE_MAX_TOTAL_SIZE                     ( "logging.file.maxTotalSize" ),
+    LOGGING_FILE_MAX_HISTORY                        ( "logging.file.maxHistory" ),
     LOGGING_FILE_PATH                               ( "logging.file.path" ),
     LOGGING_DEV_OUTPUT                              ( "logging.devOutput.enable" ),
     LOGGING_LOG_CSP_REPORT                          ( "logging.cspReport.enable" ),
@@ -281,6 +289,8 @@ public enum AppProperty
     OTP_ENCRYPTION_ALG                              ( "otp.encryptionAlg" ),
     PASSWORD_RANDOMGEN_MAX_ATTEMPTS                 ( "password.randomGenerator.maxAttempts" ),
     PASSWORD_RANDOMGEN_MAX_LENGTH                   ( "password.randomGenerator.maxLength" ),
+    PASSWORD_RANDOMGEN_MIN_LENGTH                   ( "password.randomGenerator.minLength" ),
+    PASSWORD_RANDOMGEN_DEFAULT_STRENGTH             ( "password.randomGenerator.defaultStrength" ),
     PASSWORD_RANDOMGEN_JITTER_COUNT                 ( "password.randomGenerator.jitter.count" ),
 
     /* Strength thresholds, introduced by the addition of the zxcvbn strength meter library (since it has 5 levels) */
@@ -319,8 +329,9 @@ public enum AppProperty
     RECAPTCHA_CLIENT_JS_URL                         ( "recaptcha.clientJsUrl" ),
     RECAPTCHA_CLIENT_IFRAME_URL                     ( "recaptcha.clientIframeUrl" ),
     RECAPTCHA_VALIDATE_URL                          ( "recaptcha.validateUrl" ),
+    REPORTING_LDAP_JOB_THREADS                      ( "reporting.ldap.recordJob.threads" ),
+    REPORTING_LDAP_JOB_TIMEOUT_MS                   ( "reporting.ldap.recordJob.timeoutMs" ),
     REPORTING_LDAP_SEARCH_TIMEOUT_MS                ( "reporting.ldap.searchTimeoutMs" ),
-    REPORTING_LDAP_SEARCH_THREADS                   ( "reporting.ldap.searchThreads" ),
     REPORTING_MAX_REPORT_AGE_SECONDS                ( "reporting.maxReportAgeSeconds" ),
     SECURITY_STRIP_INLINE_JAVASCRIPT                ( "security.html.stripInlineJavascript" ),
     SECURITY_HTTP_FORCE_REQUEST_SEQUENCING          ( "security.http.forceRequestSequencing" ),
@@ -328,6 +339,8 @@ public enum AppProperty
     SECURITY_HTTP_PERFORM_CSRF_HEADER_CHECKS        ( "security.http.performCsrfHeaderChecks" ),
     SECURITY_HTTP_PROMISCUOUS_ENABLE                ( "security.http.promiscuousEnable" ),
     SECURITY_HTTP_CONFIG_CSP_HEADER                 ( "security.http.config.cspHeader" ),
+    SECURITY_HTTP_USER_PHOTO_MIME_TYPES             ( "security.http.permittedUserPhotoMimeTypes" ),
+    SECURITY_HTTP_PERMITTED_URL_PATH_CHARS          ( "security.http.permittedUrlPathCharacters" ),
     SECURITY_HTTPSSERVER_SELF_FUTURESECONDS         ( "security.httpsServer.selfCert.futureSeconds" ),
     SECURITY_HTTPSSERVER_SELF_ALG                   ( "security.httpsServer.selfCert.alg" ),
     SECURITY_HTTPSSERVER_SELF_KEY_SIZE              ( "security.httpsServer.selfCert.keySize" ),
@@ -346,9 +359,8 @@ public enum AppProperty
     SECURITY_CONFIG_MIN_SECURITY_KEY_LENGTH         ( "security.config.minSecurityKeyLength" ),
     SECURITY_DEFAULT_EPHEMERAL_BLOCK_ALG            ( "security.defaultEphemeralBlockAlg" ),
     SECURITY_DEFAULT_EPHEMERAL_HASH_ALG             ( "security.defaultEphemeralHashAlg" ),
+    SECURITY_DEFAULT_EPHEMERAL_HMAC_ALG             ( "security.defaultEphemeralHmacAlg" ),
     SEEDLIST_BUILTIN_PATH                           ( "seedlist.builtin.path" ),
-    SMTP_IO_CONNECT_TIMEOUT                         ( "smtp.io.connectTimeoutMs" ),
-    SMTP_IO_READ_TIMEOUT                            ( "smtp.io.readTimeoutMs" ),
     SMTP_SUBJECT_ENCODING_CHARSET                   ( "smtp.subjectEncodingCharset" ),
     SMTP_RETRYABLE_SEND_RESPONSE_STATUSES           ( "smtp.retryableSendResponseStatus" ),
     TOKEN_CLEANER_INTERVAL_SECONDS                  ( "token.cleaner.intervalSeconds" ),
@@ -373,6 +385,9 @@ public enum AppProperty
 
     /** Regular expression to be used for matching URLs to be shortened by the URL Shortening Service Class. */
     URL_SHORTNER_URL_REGEX                          ( "urlshortener.url.regex" ),
+    VERSION_CHECK_URL                               ( "versionCheck.url" ),
+    VERSION_CHECK_CHECK_INTERVAL_SECONDS            ( "versionCheck.checkIntervalSeconds" ),
+    VERSION_CHECK_CHECK_INTERVAL_ERROR_SECONDS      ( "versionCheck.checkIntervalErrorSeconds" ),
     WORDLIST_BUILTIN_PATH                           ( "wordlist.builtin.path" ),
     WORDLIST_CHAR_LENGTH_MAX                        ( "wordlist.maxCharLength" ),
     WORDLIST_CHAR_LENGTH_MIN                        ( "wordlist.minCharLength" ),
@@ -397,14 +412,16 @@ public enum AppProperty
     ALLOW_MACRO_IN_REGEX_SETTING                    ( "password.policy.allowMacroInRegexSetting" ),;
 
     public static final String VALUE_SEPARATOR = ";;;";
+
     private static final String DESCRIPTION_SUFFIX = "_description";
 
     private final String key;
-    private String defaultValue;
+    private final String defaultValue;
 
     AppProperty( final String key )
     {
         this.key = key;
+        this.defaultValue = readAppPropertiesBundle( key );
     }
 
     public String getKey( )
@@ -414,11 +431,12 @@ public enum AppProperty
 
     public String getDefaultValue( )
     {
-        if ( defaultValue == null )
-        {
-            defaultValue = readAppPropertiesBundle( this.getKey() );
-        }
         return defaultValue;
+    }
+
+    public boolean isDefaultValue( final String value )
+    {
+        return Objects.equals( defaultValue, value );
     }
 
     public String getDescription( )
@@ -429,5 +447,10 @@ public enum AppProperty
     private static String readAppPropertiesBundle( final String key )
     {
         return ResourceBundle.getBundle( AppProperty.class.getName() ).getString( key );
+    }
+
+    public static Optional<AppProperty> forKey( final String key )
+    {
+        return EnumUtil.readEnumFromPredicate( AppProperty.class, appProperty -> Objects.equals( appProperty.getKey(), key ) );
     }
 }

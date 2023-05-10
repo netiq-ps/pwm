@@ -21,14 +21,15 @@
 package password.pwm.receiver;
 
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.TimeDuration;
 
-import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 
 @WebServlet(
         name = "TelemetryViewer",
@@ -38,33 +39,33 @@ import java.io.IOException;
 )
 public class TelemetryViewerServlet extends HttpServlet
 {
-    private static final Logger LOGGER = Logger.createLogger( TelemetryViewerServlet.class );
     private static final String PARAM_DAYS = "days";
 
     public static final String SUMMARY_ATTR = "SummaryBean";
 
     @Override
-    protected void doGet( final HttpServletRequest req, final HttpServletResponse resp ) throws ServletException, IOException
+    protected void doGet( final HttpServletRequest req, final HttpServletResponse resp )
+            throws ServletException, IOException
     {
-        LOGGER.debug( "htttp request for viewer" );
         final String daysString = req.getParameter( PARAM_DAYS );
         final int days = StringUtil.isEmpty( daysString ) ? 30 : Integer.parseInt( daysString );
         final ContextManager contextManager = ContextManager.getContextManager( req.getServletContext() );
+
         final PwmReceiverApp app = contextManager.getApp();
+        app.getStatisticCounterBundle().increment( PwmReceiverApp.CounterStatsKey.TelemetryViewRequests );
+        app.getStatisticEpsBundle().markEvent( PwmReceiverApp.EpsStatKey.TelemetryViewRequests );
 
         {
             final String errorState = app.getStatus().getErrorState();
             if ( StringUtil.notEmpty( errorState ) )
             {
                 resp.sendError( 500, errorState );
-                final String htmlBody = "<html>Error: " + errorState + "</html>";
-                resp.getWriter().print( htmlBody );
                 return;
             }
         }
 
         final Storage storage = app.getStorage();
-        final SummaryBean summaryBean = SummaryBean.fromStorage( storage, TimeDuration.of( days, TimeDuration.Unit.DAYS ) );
+        final SummaryBean summaryBean = SummaryBean.fromStorage( storage, Duration.of( days, ChronoUnit.DAYS ) );
         req.setAttribute( SUMMARY_ATTR, summaryBean );
         req.getServletContext().getRequestDispatcher( "/WEB-INF/jsp/telemetry-viewer.jsp" ).forward( req, resp );
     }

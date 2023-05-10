@@ -25,11 +25,10 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.Value;
 import password.pwm.bean.UserIdentity;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StatisticCounterBundle;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -52,16 +51,16 @@ class MemoryCacheStore implements CacheStore
     }
 
     @Override
-    public void store( final CacheKey cacheKey, final Instant expirationDate, final Serializable data )
+    public void store( final CacheKey cacheKey, final Instant expirationDate, final Object data )
             throws PwmUnrecoverableException
     {
         cacheStoreInfo.increment( DebugKey.storeCount );
-        final String jsonData = JsonUtil.serialize( data );
+        final String jsonData = JsonFactory.get().serialize( data );
         memoryStore.put( cacheKey, new CacheValueWrapper( cacheKey, expirationDate, jsonData ) );
     }
 
     @Override
-    public <T extends Serializable> T readAndStore( final CacheKey cacheKey, final Instant expirationDate, final Class<T> classOfT, final CacheLoader<T> cacheLoader )
+    public <T extends Object> T readAndStore( final CacheKey cacheKey, final Instant expirationDate, final Class<T> classOfT, final CacheLoader<T> cacheLoader )
             throws PwmUnrecoverableException
     {
         cacheStoreInfo.increment( DebugKey.readCount );
@@ -75,13 +74,13 @@ class MemoryCacheStore implements CacheStore
         }
 
         final T data = cacheLoader.read();
-        final String jsonIfiedData = JsonUtil.serialize( data );
+        final String jsonIfiedData = JsonFactory.get().serialize( data );
         cacheStoreInfo.increment( DebugKey.missCount );
         memoryStore.put( cacheKey, new CacheValueWrapper( cacheKey, expirationDate, jsonIfiedData ) );
         return data;
     }
 
-    private <T extends Serializable> T extractValue( final Class<T> classOfT, final CacheValueWrapper valueWrapper, final CacheKey cacheKey )
+    private <T extends Object> T extractValue( final Class<T> classOfT, final CacheValueWrapper valueWrapper, final CacheKey cacheKey )
     {
         if ( valueWrapper != null )
         {
@@ -91,7 +90,7 @@ class MemoryCacheStore implements CacheStore
                 {
                     cacheStoreInfo.increment( DebugKey.hitCount );
                     final String jsonValue  = valueWrapper.getPayload();
-                    return JsonUtil.deserialize( jsonValue, classOfT );
+                    return JsonFactory.get().deserialize( jsonValue, classOfT );
                 }
             }
         }
@@ -100,7 +99,7 @@ class MemoryCacheStore implements CacheStore
     }
 
     @Override
-    public <T extends Serializable> T read( final CacheKey cacheKey, final Class<T> classOfT )
+    public <T extends Object> T read( final CacheKey cacheKey, final Class<T> classOfT )
     {
         cacheStoreInfo.increment( DebugKey.readCount );
         final CacheValueWrapper valueWrapper = memoryStore.getIfPresent( cacheKey );
@@ -130,7 +129,7 @@ class MemoryCacheStore implements CacheStore
     @Override
     public List<CacheDebugItem> getCacheDebugItems( )
     {
-        final List<CacheDebugItem> items = new ArrayList<>();
+        final List<CacheDebugItem> items = new ArrayList<>( memoryStore.asMap().size() );
         for ( final Map.Entry<CacheKey, CacheValueWrapper> entry : memoryStore.asMap().entrySet() )
         {
             final CacheKey cacheKey = entry.getKey();
@@ -156,7 +155,7 @@ class MemoryCacheStore implements CacheStore
     }
 
     @Value
-    private static class CacheValueWrapper implements Serializable
+    private static class CacheValueWrapper
     {
         private final CacheKey cacheKey;
         private final Instant expirationDate;

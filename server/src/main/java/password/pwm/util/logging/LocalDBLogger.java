@@ -23,6 +23,7 @@ package password.pwm.util.logging;
 import password.pwm.AppAttribute;
 import password.pwm.PwmApplication;
 import password.pwm.bean.DomainID;
+import password.pwm.bean.SessionLabel;
 import password.pwm.config.option.DataStorageMethod;
 import password.pwm.error.PwmException;
 import password.pwm.health.HealthMessage;
@@ -32,6 +33,7 @@ import password.pwm.svc.PwmService;
 import password.pwm.util.PwmScheduler;
 import password.pwm.util.java.ConditionalTaskExecutor;
 import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.PwmUtil;
 import password.pwm.util.java.PwmNumberFormat;
 import password.pwm.util.java.StatisticAverageBundle;
 import password.pwm.util.java.StatisticCounterBundle;
@@ -41,7 +43,6 @@ import password.pwm.util.localdb.LocalDB;
 import password.pwm.util.localdb.LocalDBException;
 import password.pwm.util.localdb.LocalDBStoredQueue;
 
-import java.io.IOException;
 import java.text.NumberFormat;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -53,10 +54,10 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.TreeMap;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -70,18 +71,25 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( LocalDBLogger.class );
 
+    private static final SessionLabel SESSION_LABEL = SessionLabel.SYSTEM_LABEL;
+
     private final LocalDBLoggerSettings settings;
     private final LocalDBStoredQueue localDBListQueue;
-    private final Queue<PwmLogEvent> tempMemoryEventQueue;
+    private final Queue<PwmLogMessage> tempMemoryEventQueue;
     private final ScheduledExecutorService cleanerService;
     private final ScheduledExecutorService writerService;
     private final AtomicBoolean cleanOnWriteFlag = new AtomicBoolean( false );
     private final AtomicBoolean flushScheduled = new AtomicBoolean( true );
+    private final PwmLogLevel minimumLevel;
 
     private final StatisticCounterBundle<CounterStat> stats = new StatisticCounterBundle<>( CounterStat.class );
     private final StatisticAverageBundle<AverageStat> averages = new StatisticAverageBundle<>( AverageStat.class );
 
-    private final ConditionalTaskExecutor debugOutputter = ConditionalTaskExecutor.forPeriodicTask( this::periodicDebugOutput, TimeDuration.MINUTE );
+    private final ConditionalTaskExecutor debugOutputter = ConditionalTaskExecutor.forPeriodicTask(
+            this::periodicDebugOutput, TimeDuration.MINUTE.asDuration() );
+
+    private static final int LOG_OUTPUT_INCREMENTS = 10_000;
+    private final AtomicLong lastLogOutput = new AtomicLong( LOG_OUTPUT_INCREMENTS );
 
     enum CounterStat
     {
@@ -95,7 +103,6 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
     {
         avgFlushLatency,
         avgFlushCount,
-
     }
 
     private boolean hasShownReadError = false;
@@ -105,11 +112,14 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
     public LocalDBLogger(
             final PwmApplication pwmApplication,
             final LocalDB localDB,
+            final PwmLogLevel minimumLevel,
             final LocalDBLoggerSettings settings
     )
             throws LocalDBException
     {
         Objects.requireNonNull( localDB, "localDB can not be null" );
+
+        this.minimumLevel = Objects.requireNonNull( minimumLevel );
 
         this.settings = settings == null
                 ? LocalDBLoggerSettings.builder().build().applyValueChecks()
@@ -123,7 +133,7 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
 
         if ( this.settings.getMaxEvents() == 0 )
         {
-            LOGGER.info( () -> "maxEvents set to zero, clearing LocalDBLogger history and LocalDBLogger will remain closed" );
+            LOGGER.info( SESSION_LABEL, () -> "maxEvents set to zero, clearing LocalDBLogger history and LocalDBLogger will remain closed" );
             localDBListQueue.clear();
             throw new IllegalArgumentException( "maxEvents=0, will remain closed" );
         }
@@ -137,7 +147,7 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
                     {
                         if ( !STORAGE_FORMAT_VERSION.equals( currentFormat ) )
                         {
-                            LOGGER.warn( () -> "localdb logger is using outdated format, clearing existing records (existing='"
+                            LOGGER.warn( SESSION_LABEL, () -> "localdb logger is using outdated format, clearing existing records (existing='"
                                     + currentFormat + "', current='" + STORAGE_FORMAT_VERSION + "')" );
 
                             localDBListQueue.clear();
@@ -148,17 +158,11 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
 
         setStatus( STATUS.OPEN );
 
-        cleanerService = Executors.newSingleThreadScheduledExecutor(
-                PwmScheduler.makePwmThreadFactory(
-                        PwmScheduler.makeThreadName( pwmApplication, this.getClass() ) + "-cleaner-",
-                        true
-                ) );
+        cleanerService = PwmScheduler.makeBackgroundServiceExecutor(
+                pwmApplication, getSessionLabel(), LocalDBLogger.class, "cleaner" );
 
-        writerService = Executors.newSingleThreadScheduledExecutor(
-                PwmScheduler.makePwmThreadFactory(
-                        PwmScheduler.makeThreadName( pwmApplication, this.getClass() ) + "-writer-",
-                        true
-                ) );
+        writerService = PwmScheduler.makeBackgroundServiceExecutor(
+                pwmApplication, getSessionLabel(), LocalDBLogger.class, "writer" );
 
         cleanerService.scheduleAtFixedRate( new CleanupTask(), 0, this.settings.cleanerFrequency().asMillis(), TimeUnit.MILLISECONDS );
 
@@ -189,7 +193,7 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
         }
         catch ( final Exception e )
         {
-            LOGGER.error( () -> "unexpected error attempting to determine tail event timestamp: " + e.getMessage() );
+            LOGGER.error( SESSION_LABEL, () -> "unexpected error attempting to determine tail event timestamp: " + e.getMessage() );
         }
 
         return Optional.empty();
@@ -221,10 +225,11 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
             debugData.put( "EventsTailAge", tailAge == null ? "n/a" : TimeDuration.fromCurrent( tailAge ).asCompactString() );
         }
 
+        final TimeDuration latency = TimeDuration.of( (long) averages.getAverage( AverageStat.avgFlushLatency ), TimeDuration.Unit.MILLISECONDS );
         debugData.put( "EventsStored", String.valueOf( localDBListQueue.size() ) );
-        debugData.put( "ConfiguredMaxEvents", PwmNumberFormat.forDefaultLocale().format( settings.getMaxEvents() ) );
+        debugData.put( "ConfiguredMaxEvents", PwmUtil.forDefaultLocale().format( settings.getMaxEvents() ) );
         debugData.put( "ConfiguredMaxAge", settings.getMaxAge().asCompactString() );
-        debugData.put( "BufferAverageLatency", averages.getFormattedAverage( AverageStat.avgFlushLatency ) );
+        debugData.put( "BufferAverageLatency", latency.asCompactString() );
         debugData.put( "BufferAverageSize", averages.getFormattedAverage( AverageStat.avgFlushCount ) );
         debugData.put( "BufferItemCount", String.valueOf( tempMemoryEventQueue.size() ) );
 
@@ -235,26 +240,45 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
 
     private void periodicDebugOutput()
     {
-        LOGGER.trace( () -> "periodic debug output: " + StringUtil.mapToString( debugStats() ) );
+        if ( lastLogOutput.get() + stats.get( CounterStat.EventsWritten ) > LOG_OUTPUT_INCREMENTS )
+        {
+            LOGGER.trace( SESSION_LABEL, () -> "periodic debug output: " + StringUtil.mapToString( debugStats() ) );
+            lastLogOutput.set( stats.get( CounterStat.EventsWritten ) );
+        }
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         final Instant startTime = Instant.now();
+
+        final int flushedEvents;
         if ( status() != STATUS.CLOSED )
         {
-            LOGGER.trace( () -> "LocalDBLogger closing" );
+            LOGGER.trace( SESSION_LABEL, () -> "LocalDBLogger closing" );
+            flushedEvents = tempMemoryEventQueue.size();
             if ( cleanerService != null )
             {
-                cleanerService.shutdown();
+                cleanerService.shutdownNow();
             }
             writerService.execute( new FlushTask() );
-            JavaHelper.closeAndWaitExecutor( writerService, TimeDuration.SECONDS_10 );
+            PwmScheduler.closeAndWaitExecutor( writerService, TimeDuration.SECONDS_10, LOGGER, SESSION_LABEL );
         }
+        else
+        {
+            flushedEvents = 0;
+        }
+
         setStatus( STATUS.CLOSED );
 
-        LOGGER.trace( () -> "LocalDBLogger close completed", () -> TimeDuration.fromCurrent( startTime ) );
+        if ( flushedEvents > 0 )
+        {
+            LOGGER.trace( SESSION_LABEL, () -> "LocalDBLogger close completed (flushed during close: " + flushedEvents + ")", TimeDuration.fromCurrent( startTime ) );
+        }
+        else
+        {
+            LOGGER.trace( SESSION_LABEL, () -> "LocalDBLogger close completed", TimeDuration.fromCurrent( startTime ) );
+        }
     }
 
     public int getStoredEventCount( )
@@ -328,7 +352,7 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
             if ( !hasShownReadError )
             {
                 hasShownReadError = true;
-                LOGGER.error( () -> "error reading localDBLogger event: " + e.getMessage() );
+                LOGGER.error( SESSION_LABEL, () -> "error reading localDBLogger event: " + e.getMessage() );
             }
         }
         return null;
@@ -364,8 +388,9 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
         }
         catch ( final PatternSyntaxException e )
         {
-            LOGGER.trace( () -> "invalid regex syntax for " + searchParameters.getUsername() + ", reverting to plaintext search" );
+            LOGGER.trace( SESSION_LABEL, () -> "invalid regex syntax for " + searchParameters.getUsername() + ", reverting to plaintext search" );
         }
+
         if ( pattern != null )
         {
             final Matcher matcher = pattern.matcher( event.getUsername() == null ? "" : event.getUsername() );
@@ -383,27 +408,35 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
             }
         }
 
-        if ( eventMatchesParams && ( searchParameters.getText() != null && searchParameters.getText().length() > 0 ) )
         {
-            final String eventMessage = event.getMessage();
-            final String textLowercase = searchParameters.getText().toLowerCase();
-            boolean isAMatch = false;
-            if ( eventMessage != null && eventMessage.length() > 0 )
+            final String searchParamText = searchParameters.getText();
+            if ( eventMatchesParams && !StringUtil.isEmpty( searchParamText ) )
             {
-                if ( eventMessage.toLowerCase().contains( textLowercase ) )
+                final String eventMessage = event.getMessage();
+                if ( eventMessage != null && eventMessage.length() > 0 )
                 {
-                    isAMatch = true;
-                }
-                else if ( event.getTopic() != null && event.getTopic().length() > 0 )
-                {
-                    if ( event.getTopic().toLowerCase().contains( textLowercase ) )
+                    final String textLowercase = searchParamText.toLowerCase();
+
+                    boolean isAMatch = false;
+                    if ( eventMessage.toLowerCase().contains( textLowercase ) )
                     {
                         isAMatch = true;
                     }
-                }
-                if ( !isAMatch )
-                {
-                    eventMatchesParams = false;
+                    else if ( event.getTopic() != null && event.getTopic().toLowerCase().contains( textLowercase ) )
+                    {
+                        isAMatch = true;
+                    }
+                    else if ( event.getTopic() != null && event.getTopic().length() > 0 )
+                    {
+                        if ( event.getTopic().toLowerCase().contains( textLowercase ) )
+                        {
+                            isAMatch = true;
+                        }
+                    }
+                    if ( !isAMatch )
+                    {
+                        eventMatchesParams = false;
+                    }
                 }
             }
         }
@@ -412,14 +445,14 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
         {
             if ( searchParameters.getEventType() == EventType.System )
             {
-                if ( event.getUsername() != null && event.getUsername().length() > 0 )
+                if ( !StringUtil.isEmpty( event.getUsername() ) )
                 {
                     eventMatchesParams = false;
                 }
             }
             else if ( searchParameters.getEventType() == EventType.User )
             {
-                if ( event.getUsername() == null || event.getUsername().length() < 1 )
+                if ( StringUtil.isEmpty( event.getUsername() ) )
                 {
                     eventMatchesParams = false;
                 }
@@ -429,26 +462,32 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
         return eventMatchesParams;
     }
 
-    public void writeEvent( final PwmLogEvent event )
+    public void writeEvent( final PwmLogMessage event )
     {
-        if ( status() == STATUS.OPEN )
+        if ( ignoreLogEvent( event ) )
         {
-            if ( settings.getMaxEvents() > 0 )
-            {
-                scheduleNextFlush();
-
-                final Instant startTime = Instant.now();
-                while ( !tempMemoryEventQueue.offer( event ) )
-                {
-                    if ( TimeDuration.fromCurrent( startTime ).isLongerThan( settings.getMaxBufferWaitTime() ) )
-                    {
-                        LOGGER.warn( () -> "discarded event after waiting max buffer wait time of " + settings.getMaxBufferWaitTime().asCompactString() );
-                        return;
-                    }
-                    TimeDuration.of( 100, TimeDuration.Unit.MILLISECONDS ).pause();
-                }
-            }
+            return;
         }
+
+        scheduleNextFlush();
+
+        final Instant startTime = Instant.now();
+        while ( !tempMemoryEventQueue.offer( event ) )
+        {
+            if ( TimeDuration.fromCurrent( startTime ).isLongerThan( settings.getMaxBufferWaitTime() ) )
+            {
+                LOGGER.warn( SESSION_LABEL, () -> "discarded event after waiting max buffer wait time of " + settings.getMaxBufferWaitTime().asCompactString() );
+                return;
+            }
+            TimeDuration.of( 100, TimeDuration.Unit.MILLISECONDS ).pause();
+        }
+    }
+
+    private boolean ignoreLogEvent( final PwmLogMessage event )
+    {
+        return status() != STATUS.OPEN
+                || settings.getMaxEvents() <= 0
+                ||         !event.getLevel().isGreaterOrSameAs( minimumLevel );
     }
 
     private void flushEvents( )
@@ -459,19 +498,12 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
         }
 
         Instant eldestEntry = Instant.now();
-        final List<String> localBuffer = new ArrayList<>();
+        final List<String> localBuffer = new ArrayList<>( Math.min( tempMemoryEventQueue.size(), settings.getMaxBufferSize() ) );
         while ( localBuffer.size() < ( settings.getMaxBufferSize() ) - 1 && !tempMemoryEventQueue.isEmpty() )
         {
-            final PwmLogEvent pwmLogEvent = tempMemoryEventQueue.poll();
-            try
-            {
-                localBuffer.add( pwmLogEvent.toEncodedString() );
-                eldestEntry = pwmLogEvent.getTimestamp();
-            }
-            catch ( final IOException e )
-            {
-                LOGGER.warn( () -> "error flushing events to localDB: " + e.getMessage(), e );
-            }
+            final PwmLogMessage pwmLogEvent = tempMemoryEventQueue.poll();
+            localBuffer.add( pwmLogEvent.toLogEvent().toEncodedString() );
+            eldestEntry = pwmLogEvent.getTimestamp();
         }
 
         try
@@ -485,12 +517,12 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
 
             stats.increment( CounterStat.BufferFlushCycles );
             stats.increment( CounterStat.EventsWritten, localBuffer.size() );
-            averages.update( AverageStat.avgFlushLatency, TimeDuration.fromCurrent( eldestEntry ) );
+            averages.update( AverageStat.avgFlushLatency, TimeDuration.fromCurrent( eldestEntry ).asDuration() );
             averages.update( AverageStat.avgFlushCount, localBuffer.size() );
         }
         catch ( final Exception e )
         {
-            LOGGER.error( () -> "error writing to localDBLogger: " + e.getMessage(), e );
+            LOGGER.error( SESSION_LABEL, () -> "error writing to localDBLogger: " + e.getMessage(), e );
         }
 
         debugOutputter.conditionallyExecuteTask();
@@ -566,7 +598,7 @@ public class LocalDBLogger extends AbstractPwmService implements PwmService
         final int eventCount = getStoredEventCount();
         if ( eventCount > settings.getMaxEvents() + 5000 )
         {
-            final PwmNumberFormat numberFormat = PwmNumberFormat.forDefaultLocale();
+            final PwmNumberFormat numberFormat = PwmUtil.forDefaultLocale();
             healthRecords.add( HealthRecord.forMessage(
                     DomainID.systemId(),
                     HealthMessage.LocalDBLogger_HighRecordCount,

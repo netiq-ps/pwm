@@ -28,7 +28,6 @@ import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmRequest;
 import password.pwm.http.servlet.peoplesearch.PeopleSearchConfiguration;
 
-import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -36,7 +35,7 @@ import java.util.Map;
 
 @Value
 @Builder
-public class PeopleSearchClientConfigBean implements Serializable
+public class PeopleSearchClientConfigBean
 {
     private Map<String, String> searchColumns;
     private boolean enableAdvancedSearch;
@@ -62,8 +61,9 @@ public class PeopleSearchClientConfigBean implements Serializable
     {
         final Locale locale = pwmRequest.getLocale();
 
-        final Map<String, String> searchColumns = new LinkedHashMap<>();
         final List<FormConfiguration> searchForm = peopleSearchConfiguration.getSearchResultForm();
+
+        final Map<String, String> searchColumns = new LinkedHashMap<>( searchForm.size() );
         for ( final FormConfiguration formConfiguration : searchForm )
         {
             searchColumns.put( formConfiguration.getName(),

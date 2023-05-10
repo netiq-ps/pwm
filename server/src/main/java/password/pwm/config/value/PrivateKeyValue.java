@@ -20,20 +20,21 @@
 
 package password.pwm.config.value;
 
+import org.jrivard.xmlchai.XmlElement;
+import org.jrivard.xmlchai.XmlFactory;
 import password.pwm.bean.PrivateKeyCertificate;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.stored.StoredConfigXmlConstants;
 import password.pwm.config.stored.XmlOutputProcessData;
+import password.pwm.error.PwmInternalException;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.util.java.JsonUtil;
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.secure.PwmSecurityKey;
+import password.pwm.util.secure.X509CertInfo;
 import password.pwm.util.secure.X509Utils;
 
-import java.io.Serializable;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
@@ -126,7 +127,6 @@ public class PrivateKeyValue extends AbstractValue
                             catch ( final PwmUnrecoverableException e )
                             {
                                 LOGGER.error( () -> "error reading privateKey for setting: '" + pwmSetting.getKey() + "': " + e.getMessage(), e );
-                                e.printStackTrace();
                             }
                         }
                     }
@@ -135,7 +135,7 @@ public class PrivateKeyValue extends AbstractValue
             }
 
             @Override
-            public X509CertificateValue fromJson( final String input )
+            public X509CertificateValue fromJson( final PwmSetting pwmSetting, final String input )
             {
                 return new X509CertificateValue( Collections.emptyList() );
             }
@@ -183,8 +183,8 @@ public class PrivateKeyValue extends AbstractValue
                     for ( final X509Certificate certificate : privateKeyCertificate.getCertificates() )
                     {
                         final XmlElement certificateElement = XmlFactory.getFactory().newElement( ELEMENT_NAME_CERTIFICATE );
-                        certificateElement.addText( X509Utils.certificateToBase64( certificate ) );
-                        valueElement.addContent( certificateElement );
+                        certificateElement.setText( X509Utils.certificateToBase64( certificate ) );
+                        valueElement.attachElement( certificateElement );
                     }
                 }
                 {
@@ -195,13 +195,13 @@ public class PrivateKeyValue extends AbstractValue
                             xmlOutputProcessData.getStoredValueEncoderMode(),
                             xmlOutputProcessData.getPwmSecurityKey() );
 
-                    keyElement.addText( encryptedKey );
-                    valueElement.addContent( keyElement );
+                    keyElement.setText( encryptedKey );
+                    valueElement.attachElement( keyElement );
                 }
             }
             catch ( final Exception e )
             {
-                throw new RuntimeException( "missing required AES and SHA1 libraries, or other crypto fault: " + e.getMessage() );
+                throw new PwmInternalException( "missing required AES and SHA1 libraries, or other crypto fault: " + e.getMessage() );
             }
         }
         return Collections.singletonList( valueElement );
@@ -212,8 +212,8 @@ public class PrivateKeyValue extends AbstractValue
     {
         if ( privateKeyCertificate != null )
         {
-            return "PrivateKeyCertificate: key=" + JsonUtil.serializeMap( X509Utils.makeDebugInfoMap( privateKeyCertificate.getKey() ) )
-                    + ", certificates=" + JsonUtil.serializeCollection( X509Utils.makeDebugInfoMap( privateKeyCertificate.getCertificates() ) );
+            return "PrivateKeyCertificate: key=" + JsonFactory.get().serializeMap( X509CertInfo.makeDebugInfoMap( privateKeyCertificate.getKey() ) )
+                    + ", certificates=" + JsonFactory.get().serializeCollection( X509CertInfo.makeDebugInfoMap( privateKeyCertificate.getCertificates() ) );
         }
         return "";
     }
@@ -231,7 +231,7 @@ public class PrivateKeyValue extends AbstractValue
                 }
                 : null;
         final Map<String, Object> returnMap = new LinkedHashMap<>();
-        returnMap.put( "certificates", X509Utils.makeDebugInfoMap( privateKeyCertificate.getCertificates(), flags ) );
+        returnMap.put( "certificates", X509CertInfo.makeDebugInfoMap( privateKeyCertificate.getCertificates(), flags ) );
         final Map<String, Object> privateKeyInfo = new LinkedHashMap<>();
         privateKeyInfo.put( "algorithm", privateKeyCertificate.getKey().getAlgorithm() );
         privateKeyInfo.put( "format", privateKeyCertificate.getKey().getFormat() );
@@ -240,8 +240,8 @@ public class PrivateKeyValue extends AbstractValue
     }
 
     @Override
-    public Serializable toDebugJsonObject( final Locale locale )
+    public Object toDebugJsonObject( final Locale locale )
     {
-        return ( Serializable ) toInfoMap( false );
+        return toInfoMap( false );
     }
 }

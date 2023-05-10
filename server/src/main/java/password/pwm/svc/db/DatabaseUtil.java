@@ -27,7 +27,6 @@ import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -145,7 +144,7 @@ class DatabaseUtil
                     + "  " + DatabaseService.VALUE_COLUMN + " " + dbConfiguration.getColumnTypeValue() + " " + "\n"
                     + ")" + "\n";
 
-            LOGGER.trace( () ->  "attempting to execute the following sql statement:\n " + sqlString );
+            LOGGER.trace( () -> "attempting to execute the following sql statement:\n " + sqlString );
 
             Statement statement = null;
             try
@@ -153,11 +152,11 @@ class DatabaseUtil
                 statement = connection.createStatement();
                 statement.execute( sqlString );
                 connection.commit();
-                LOGGER.debug( () -> "created table " + table.toString() );
+                LOGGER.debug( () -> "created table " + table );
             }
             catch ( final SQLException ex )
             {
-                final String errorMsg = "error creating new table " + table.toString() + ": " + ex.getMessage();
+                final String errorMsg = "error creating new table " + table + ": " + ex.getMessage();
                 final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_DB_UNAVAILABLE, errorMsg );
                 throw new DatabaseException( errorInformation );
             }
@@ -168,9 +167,9 @@ class DatabaseUtil
         }
 
         {
-            final String indexName = table.toString() + INDEX_NAME_SUFFIX;
+            final String indexName = table + INDEX_NAME_SUFFIX;
             final String sqlString = "CREATE index " + indexName
-                    + " ON " + table.toString()
+                    + " ON " + table
                     + " (" + DatabaseService.KEY_COLUMN + ")";
 
             Statement statement = null;
@@ -194,7 +193,7 @@ class DatabaseUtil
                 }
                 else
                 {
-                    LOGGER.warn( () -> errorInformation.toDebugStr() );
+                    LOGGER.warn( errorInformation::toDebugStr );
                 }
             }
             finally
@@ -246,7 +245,7 @@ class DatabaseUtil
 
     @Getter
     @AllArgsConstructor
-    static class DebugInfo implements Serializable
+    static class DebugInfo
     {
         private final Instant startTime = Instant.now();
         private final int opId = OP_COUNTER.incrementAndGet();

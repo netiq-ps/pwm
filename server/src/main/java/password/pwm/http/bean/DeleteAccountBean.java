@@ -20,31 +20,24 @@
 
 package password.pwm.http.bean;
 
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 import password.pwm.config.option.SessionBeanMode;
 
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
+@Data
+@EqualsAndHashCode( callSuper = false )
 public class DeleteAccountBean extends PwmSessionBean
 {
-
     private boolean agreementPassed;
 
-    public boolean isAgreementPassed( )
-    {
-        return agreementPassed;
-    }
-
-    public void setAgreementPassed( final boolean agreementPassed )
-    {
-        this.agreementPassed = agreementPassed;
-    }
-
     @Override
-    public Type getType( )
+    public BeanType getBeanType( )
     {
-        return Type.PUBLIC;
+        return BeanType.PUBLIC;
     }
 
     @Override

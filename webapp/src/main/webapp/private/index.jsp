@@ -82,18 +82,16 @@
                 </a>
             </pwm:if>
 
-            <pwm:if test="<%=PwmIfTest.setupChallengeEnabled%>">
-                <pwm:if test="<%=PwmIfTest.permission%>" permission="<%=Permission.SETUP_RESPONSE%>">
-                    <a id="button_SetupResponses" href="<pwm:url addContext="true" url='<%=PwmServletDefinition.SetupResponses.servletUrl()%>'/>">
-                        <div class="tile">
-                            <div class="tile-content">
-                                <div class="tile-image security-image"></div>
-                                <div class="tile-title" title="<pwm:display key='Title_SetupResponses'/>"><pwm:display key="Title_SetupResponses"/></div>
-                                <div class="tile-subtitle" title="<pwm:display key='Long_Title_SetupResponses'/>"><pwm:display key="Long_Title_SetupResponses"/></div>
-                            </div>
+            <pwm:if test="<%=PwmIfTest.setupResponsesEnabled%>">
+                <a id="button_SetupResponses" href="<pwm:url addContext="true" url='<%=PwmServletDefinition.SetupResponses.servletUrl()%>'/>">
+                    <div class="tile">
+                        <div class="tile-content">
+                            <div class="tile-image security-image"></div>
+                            <div class="tile-title" title="<pwm:display key='Title_SetupResponses'/>"><pwm:display key="Title_SetupResponses"/></div>
+                            <div class="tile-subtitle" title="<pwm:display key='Long_Title_SetupResponses'/>"><pwm:display key="Long_Title_SetupResponses"/></div>
                         </div>
-                    </a>
-                </pwm:if>
+                    </div>
+                </a>
             </pwm:if>
 
             <pwm:if test="<%=PwmIfTest.otpSetupEnabled%>">
@@ -182,7 +180,7 @@
             </pwm:if>
         </pwm:if>
         <pwm:if test="<%=PwmIfTest.permission%>" permission="<%=Permission.PWMADMIN%>">
-            <a id="button_Admin" href="<pwm:url url='<%=PwmServletDefinition.Admin.servletUrl()%>' addContext="true"/> ">
+            <a id="button_Admin" href="<pwm:url url='<%=PwmServletDefinition.AdminMenu.servletUrl()%>' addContext="true"/> ">
                 <div class="tile">
                     <div class="tile-content">
                         <div class="tile-image admin-image"></div>

@@ -29,7 +29,7 @@ import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.svc.PwmService;
 import password.pwm.util.DataStore;
 import password.pwm.util.java.ClosableIterator;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StatisticCounterBundle;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
@@ -39,16 +39,20 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 
 class IntruderDataStore implements IntruderRecordStore
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( IntruderDataStore.class );
+    private static final long CLEANER_MIN_WRITE_COUNT = 1_000;
 
     private final DataStore dataStore;
     private final Supplier<PwmService.STATUS> serviceStatus;
     private final StatisticCounterBundle<DebugKeys> stats = new StatisticCounterBundle<>( DebugKeys.class );
     private final PwmService intruderService;
+
+    private final LongAdder writeCounter = new LongAdder();
 
     private Instant eldestRecord;
 
@@ -57,6 +61,7 @@ class IntruderDataStore implements IntruderRecordStore
         this.intruderService = intruderService;
         this.dataStore = dataStore;
         this.serviceStatus = serviceStatus;
+        writeCounter.add( CLEANER_MIN_WRITE_COUNT );
     }
 
     @Override
@@ -93,7 +98,7 @@ class IntruderDataStore implements IntruderRecordStore
 
         try
         {
-            return Optional.ofNullable( JsonUtil.deserialize( value.get(), IntruderRecord.class ) );
+            return Optional.ofNullable( JsonFactory.get().deserialize( value.get(), IntruderRecord.class ) );
         }
         catch ( final Exception e )
         {
@@ -116,10 +121,11 @@ class IntruderDataStore implements IntruderRecordStore
     public void write( final String key, final IntruderRecord record )
             throws PwmOperationalException, PwmUnrecoverableException
     {
-        final String jsonRecord = JsonUtil.serialize( record );
+        final String jsonRecord = JsonFactory.get().serialize( record );
         try
         {
             dataStore.put( key, jsonRecord );
+            writeCounter.increment();
         }
         catch ( final PwmDataStoreException e )
         {
@@ -130,7 +136,7 @@ class IntruderDataStore implements IntruderRecordStore
 
     @Override
     public ClosableIterator<IntruderRecord> iterator()
-            throws PwmOperationalException, PwmUnrecoverableException
+            throws PwmUnrecoverableException
     {
         try
         {
@@ -138,7 +144,7 @@ class IntruderDataStore implements IntruderRecordStore
         }
         catch ( final PwmDataStoreException e )
         {
-            throw new PwmOperationalException( PwmError.ERROR_INTERNAL, "iterator unavailable:" + e.getMessage() );
+            throw new PwmUnrecoverableException( PwmError.ERROR_INTERNAL, "iterator unavailable:" + e.getMessage() );
         }
     }
 
@@ -220,6 +226,11 @@ class IntruderDataStore implements IntruderRecordStore
     @Override
     public void cleanup( final TimeDuration maxRecordAge )
     {
+        if ( writeCounter.longValue() < CLEANER_MIN_WRITE_COUNT )
+        {
+            return;
+        }
+
         if ( eldestRecord != null && TimeDuration.fromCurrent( eldestRecord ).isShorterThan( maxRecordAge ) )
         {
             LOGGER.trace( intruderService.getSessionLabel(), () -> "skipping table cleanup: eldest record is younger than max age" );
@@ -266,5 +277,7 @@ class IntruderDataStore implements IntruderRecordStore
                     + TimeDuration.compactFromCurrent( startTime ) + ", recordsExamined="
                     + finalExamined + ", recordsRemoved=" + finalRemoved );
         }
+
+        writeCounter.reset();
     }
 }

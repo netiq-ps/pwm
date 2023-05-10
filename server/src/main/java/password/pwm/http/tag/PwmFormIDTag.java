@@ -20,76 +20,43 @@
 
 package password.pwm.http.tag;
 
-import password.pwm.PwmDomain;
-import password.pwm.PwmApplicationMode;
 import password.pwm.bean.FormNonce;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.http.JspUtility;
 import password.pwm.http.PwmRequest;
+import password.pwm.http.PwmSession;
 import password.pwm.http.state.SessionStateService;
 import password.pwm.util.logging.PwmLogger;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.jsp.tagext.TagSupport;
-import java.io.IOException;
 import java.time.Instant;
 
-public class PwmFormIDTag extends TagSupport
+public class PwmFormIDTag extends PwmAbstractTag
 {
-
     private static final PwmLogger LOGGER = PwmLogger.forClass( PwmFormIDTag.class );
 
-    private static String buildPwmFormID( final PwmRequest pwmRequest ) throws PwmUnrecoverableException
+    @Override
+    protected PwmLogger getLogger()
     {
-        if ( pwmRequest == null || pwmRequest.getPwmDomain() == null )
-        {
-            return "";
-        }
-
-        final PwmDomain pwmDomain = pwmRequest.getPwmDomain();
-        if ( pwmDomain == null )
-        {
-            return "";
-        }
-        final SessionStateService sessionStateService = pwmDomain.getSessionStateService();
-        final String value = sessionStateService.getSessionStateInfo( pwmRequest );
-        final FormNonce formID = new FormNonce(
-                pwmRequest.getPwmSession().getLoginInfoBean().getGuid(),
-                Instant.now(),
-                pwmRequest.getPwmSession().getLoginInfoBean().getReqCounter(),
-                value
-        );
-        return pwmRequest.getPwmDomain().getSecureService().encryptObjectToString( formID );
+        return LOGGER;
     }
 
     @Override
-    public int doEndTag( )
-            throws javax.servlet.jsp.JspTagException
+    protected String generateTagBodyContents( final PwmRequest pwmRequest )
+            throws PwmUnrecoverableException
     {
-        if ( PwmApplicationMode.determineMode( ( HttpServletRequest ) pageContext.getRequest() ) == PwmApplicationMode.ERROR )
-        {
-            return EVAL_PAGE;
-        }
+        return buildPwmFormID( pwmRequest );
+    }
 
-        try
-        {
-            final PwmRequest pwmRequest = JspUtility.getPwmRequest( pageContext );
-            final String pwmFormID = buildPwmFormID( pwmRequest );
-
-            pageContext.getOut().write( pwmFormID );
-        }
-        catch ( final Exception e )
-        {
-            try
-            {
-                pageContext.getOut().write( "errorGeneratingPwmFormID" );
-            }
-            catch ( final IOException e1 )
-            {
-                /* ignore */
-            }
-            LOGGER.error( () -> "error during pwmFormIDTag output of pwmFormID: " + e.getMessage(), e );
-        }
-        return EVAL_PAGE;
+    private static String buildPwmFormID( final PwmRequest pwmRequest ) throws PwmUnrecoverableException
+    {
+        final SessionStateService sessionStateService = pwmRequest.getPwmDomain().getSessionStateService();
+        final String value = sessionStateService.getSessionStateInfo( pwmRequest );
+        final PwmSession pwmSession = pwmRequest.getPwmSession();
+        final FormNonce formID = new FormNonce(
+                pwmSession.getLoginInfoBean().getGuid(),
+                Instant.now(),
+                pwmSession.getLoginInfoBean().getReqCounter(),
+                value
+        );
+        return pwmRequest.getPwmDomain().getSecureService().encryptObjectToString( formID );
     }
 }

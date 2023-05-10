@@ -23,10 +23,9 @@ package password.pwm.config.option;
 import password.pwm.config.SettingReader;
 import password.pwm.i18n.Display;
 
-import java.io.Serializable;
 import java.util.Locale;
 
-public enum IdentityVerificationMethod implements Serializable, ConfigurationOption
+public enum IdentityVerificationMethod implements ConfigurationOption
 {
     PREVIOUS_AUTH( false, Display.Field_VerificationMethodPreviousAuth, Display.Description_VerificationMethodPreviousAuth ),
     ATTRIBUTES( true, Display.Field_VerificationMethodAttributes, Display.Description_VerificationMethodAttributes ),
@@ -34,7 +33,8 @@ public enum IdentityVerificationMethod implements Serializable, ConfigurationOpt
     TOKEN( true, Display.Field_VerificationMethodToken, Display.Description_VerificationMethodToken ),
     OTP( true, Display.Field_VerificationMethodOTP, Display.Description_VerificationMethodOTP ),
     REMOTE_RESPONSES( false, Display.Field_VerificationMethodRemoteResponses, Display.Description_VerificationMethodRemoteResponses ),
-    OAUTH( true, Display.Field_VerificationMethodOAuth, Display.Description_VerificationMethodOAuth ),;
+    OAUTH( true, Display.Field_VerificationMethodOAuth, Display.Description_VerificationMethodOAuth ),
+    NAAF( false, Display.Value_Deprecated, Display.Value_Deprecated ),;
 
     private final transient boolean userSelectable;
     private final transient Display labelKey;

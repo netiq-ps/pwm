@@ -20,30 +20,25 @@
 
 package password.pwm.config.value;
 
-import com.google.gson.reflect.TypeToken;
+import org.jrivard.xmlchai.XmlElement;
+import org.jrivard.xmlchai.XmlFactory;
 import password.pwm.PwmConstants;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.stored.StoredConfigXmlConstants;
 import password.pwm.config.stored.XmlOutputProcessData;
 import password.pwm.config.value.data.RemoteWebServiceConfiguration;
 import password.pwm.error.PwmOperationalException;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.secure.PwmSecurityKey;
-import password.pwm.util.secure.X509Utils;
 
-import java.io.Serializable;
-import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -55,7 +50,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
 
     public RemoteWebServiceValue( final List<RemoteWebServiceConfiguration> values )
     {
-        this.values = Collections.unmodifiableList( values );
+        this.values = List.copyOf( CollectionUtil.stripNulls( values ) );
     }
 
     public static StoredValueFactory factory( )
@@ -63,7 +58,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
         return new StoredValueFactory()
         {
             @Override
-            public RemoteWebServiceValue fromJson( final String input )
+            public RemoteWebServiceValue fromJson( final PwmSetting pwmSetting, final String input )
             {
                 if ( input == null )
                 {
@@ -71,15 +66,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
                 }
                 else
                 {
-                    List<RemoteWebServiceConfiguration> srcList = JsonUtil.deserialize( input,
-                            new TypeToken<List<RemoteWebServiceConfiguration>>()
-                            {
-                            }
-                    );
-
-                    srcList = srcList == null ? new ArrayList<>() : srcList;
-                    srcList.removeIf( Objects::isNull );
-                    return new RemoteWebServiceValue( Collections.unmodifiableList( srcList ) );
+                    return new RemoteWebServiceValue( JsonFactory.get().deserializeList( input, RemoteWebServiceConfiguration.class ) );
                 }
             }
 
@@ -98,7 +85,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
                     final Optional<String> value = loopValueElement.getText();
                     if ( value.isPresent() )
                     {
-                        final RemoteWebServiceConfiguration parsedValue = JsonUtil.deserialize( value.get(), RemoteWebServiceConfiguration.class );
+                        final RemoteWebServiceConfiguration parsedValue = JsonFactory.get().deserialize( value.get(), RemoteWebServiceConfiguration.class );
                         final Optional<String> decodedValue = StoredValueEncoder.decode(
                                 parsedValue.getPassword(),
                                 StoredValueEncoder.Mode.ENCODED,
@@ -115,7 +102,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
     @Override
     public List<XmlElement> toXmlValues( final String valueElementName, final XmlOutputProcessData xmlOutputProcessData )
     {
-        final List<XmlElement> returnList = new ArrayList<>();
+        final List<XmlElement> returnList = new ArrayList<>( values.size() );
         for ( final RemoteWebServiceConfiguration value : values )
         {
             final XmlElement valueElement = XmlFactory.getFactory().newElement( valueElementName );
@@ -134,7 +121,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
             }
 
             final RemoteWebServiceConfiguration clonedValue = value.toBuilder().password( encodedValue ).build();
-            valueElement.addText( JsonUtil.serialize( clonedValue ) );
+            valueElement.setText( JsonFactory.get().serialize( clonedValue ) );
             returnList.add( valueElement );
         }
         return returnList;
@@ -143,7 +130,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
     @Override
     public List<RemoteWebServiceConfiguration> toNativeObject( )
     {
-        return Collections.unmodifiableList( values );
+        return values;
     }
 
     @Override
@@ -157,7 +144,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
             }
         }
 
-        final Set<String> seenNames = new HashSet<>();
+        final Set<String> seenNames = new HashSet<>( values.size() );
         for ( final RemoteWebServiceConfiguration item : values )
         {
             if ( seenNames.contains( item.getName().toLowerCase() ) )
@@ -170,29 +157,6 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
 
         return Collections.emptyList();
     }
-
-    public List<Map<String, Object>> toInfoMap( )
-    {
-        final String originalJson = JsonUtil.serializeCollection( values );
-        final List<Map<String, Object>> tempObj = JsonUtil.deserialize( originalJson, new TypeToken<List<Map<String, Object>>>()
-        {
-        } );
-        for ( final Map<String, Object> mapObj : tempObj )
-        {
-            final RemoteWebServiceConfiguration serviceConfig = forName( ( String ) mapObj.get( "name" ) );
-            if ( serviceConfig != null && serviceConfig.getCertificates() != null )
-            {
-                final List<Map<String, String>> certificateInfos = new ArrayList<>();
-                for ( final X509Certificate certificate : serviceConfig.getCertificates() )
-                {
-                    certificateInfos.add( X509Utils.makeDebugInfoMap( certificate, X509Utils.DebugInfoFlag.IncludeCertificateDetail ) );
-                }
-                mapObj.put( "certificateInfos", certificateInfos );
-            }
-        }
-        return tempObj;
-    }
-
 
     public RemoteWebServiceConfiguration forName( final String name )
     {
@@ -211,7 +175,12 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
     }
 
     @Override
-    public Serializable toDebugJsonObject( final Locale locale )
+    public Object toDebugJsonObject( final Locale locale )
+    {
+        return makeDebugJsonObject( locale );
+    }
+
+    private List<RemoteWebServiceConfiguration> makeDebugJsonObject( final Locale locale )
     {
         final ArrayList<RemoteWebServiceConfiguration> output = new ArrayList<>();
         for ( final RemoteWebServiceConfiguration remoteWebServiceConfiguration : values )
@@ -231,7 +200,7 @@ public class RemoteWebServiceValue extends AbstractValue implements StoredValue
     @Override
     public String toDebugString( final Locale locale )
     {
-        return JsonUtil.serialize( this.toDebugJsonObject( locale ) );
+        return JsonFactory.get().serializeCollection( this.makeDebugJsonObject( locale ) );
     }
 
 }

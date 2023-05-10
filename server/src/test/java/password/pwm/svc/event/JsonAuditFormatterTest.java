@@ -20,19 +20,20 @@
 
 package password.pwm.svc.event;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.localdb.TestHelper;
+
+import java.nio.file.Path;
 
 public class JsonAuditFormatterTest
 {
-    @Rule
-    public TemporaryFolder temporaryFolder = new TemporaryFolder();
+    @TempDir
+    public Path temporaryFolder;
 
     @Test
     public void testCEFFormatting() throws Exception
@@ -52,14 +53,14 @@ public class JsonAuditFormatterTest
                 + "\"sourceHost\":\"ws31222\""
                 + "}";
 
-        final UserAuditRecord auditRecord = JsonUtil.deserialize( jsonInput, AuditRecordData.class );
-        final String expectedOutput = PwmConstants.PWM_APP_NAME + " " + jsonInput;
+        final UserAuditRecord auditRecord = JsonFactory.get().deserialize( jsonInput, AuditRecordData.class );
+        final String expectedOutput = PwmConstants.PWM_APP_NAME + " " + JsonFactory.get().serialize( auditRecord );
         final AuditFormatter auditFormatter = new JsonAuditFormatter();
 
-        final PwmApplication pwmApplication = TestHelper.makeTestPwmApplication( temporaryFolder.newFolder() );
+        final PwmApplication pwmApplication = TestHelper.makeTestPwmApplication( temporaryFolder );
 
         final String output = auditFormatter.convertAuditRecordToMessage( pwmApplication, auditRecord );
-        Assert.assertEquals( expectedOutput, output );
+        Assertions.assertEquals( expectedOutput, output );
     }
 
 }

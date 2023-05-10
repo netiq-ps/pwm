@@ -31,6 +31,7 @@ import com.novell.ldapchai.util.ChaiUtility;
 import lombok.Builder;
 import lombok.Value;
 import password.pwm.PwmDomain;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.SessionLabel;
 import password.pwm.config.DomainConfig;
 import password.pwm.config.PwmSetting;
@@ -38,7 +39,6 @@ import password.pwm.config.profile.LdapProfile;
 import password.pwm.error.PwmException;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -93,7 +93,7 @@ public class LdapDebugDataGenerator
                 }
 
                 final LdapDebugInfo ldapDebugInfo = LdapDebugInfo.builder()
-                        .profileName( ldapProfile.getIdentifier() )
+                        .profileName( ldapProfile.getId() )
                         .displayName( ldapProfile.getDisplayName( locale ) )
                         .serverInfo( ldapDebugServerInfos )
                         .build();
@@ -176,16 +176,16 @@ public class LdapDebugDataGenerator
 
     @Value
     @Builder
-    public static class LdapDebugInfo implements Serializable
+    public static class LdapDebugInfo
     {
-        private String profileName;
+        private ProfileID profileName;
         private String displayName;
         private List<LdapDebugServerInfo> serverInfo;
     }
 
     @Value
     @Builder
-    public static class LdapDebugServerInfo implements Serializable
+    public static class LdapDebugServerInfo
     {
         private String ldapServerlUrl;
         private String testUserDN;

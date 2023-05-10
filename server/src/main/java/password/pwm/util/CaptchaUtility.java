@@ -47,7 +47,7 @@ import password.pwm.svc.httpclient.PwmHttpClientResponse;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.svc.intruder.IntruderDomainService;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 
@@ -167,8 +167,8 @@ public class CaptchaUtility
                     .build();
 
             LOGGER.debug( pwmRequest, () -> "sending reCaptcha verification request" );
-            final PwmHttpClient client = pwmRequest.getPwmDomain().getHttpClientService().getPwmHttpClient();
-            final PwmHttpClientResponse clientResponse = client.makeRequest( clientRequest, pwmRequest.getLabel()  );
+            final PwmHttpClient client = pwmRequest.getClientConnectionHolder().getPwmHttpClient( null );
+            final PwmHttpClientResponse clientResponse = client.makeRequest( clientRequest );
 
             if ( clientResponse.getStatusCode() != HttpServletResponse.SC_OK )
             {
@@ -209,14 +209,14 @@ public class CaptchaUtility
                         final String errorCode = element.getAsString();
                         errorCodes.add( errorCode );
                     }
-                    LOGGER.debug( pwmRequest, () -> "recaptcha error codes: " + JsonUtil.serializeCollection( errorCodes ) );
+                    LOGGER.debug( pwmRequest, () -> "recaptcha error codes: " + JsonFactory.get().serializeCollection( errorCodes ) );
                 }
             }
         }
         catch ( final Exception e )
         {
             final String errorMsg = "unexpected error during reCaptcha API execution: " + e.getMessage();
-            LOGGER.error( () -> errorMsg, e );
+            LOGGER.error( pwmRequest, () -> errorMsg, e );
             final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_CAPTCHA_API_ERROR, errorMsg );
             throw new PwmUnrecoverableException( errorInfo, e );
         }
@@ -250,17 +250,19 @@ public class CaptchaUtility
             throws PwmUnrecoverableException
     {
         String cookieValue = pwmRequest.getDomainConfig().readSettingAsString( PwmSetting.CAPTCHA_SKIP_COOKIE );
-        if ( cookieValue == null || cookieValue.trim().length() < 1 )
+        if ( StringUtil.isTrimEmpty( cookieValue ) )
         {
             return null;
         }
 
-        if ( cookieValue.equals( COOKIE_SKIP_INSTANCE_VALUE ) )
+        cookieValue = cookieValue.trim();
+
+        if ( COOKIE_SKIP_INSTANCE_VALUE.equals( cookieValue ) )
         {
             cookieValue = pwmRequest.getPwmApplication().getInstanceID();
         }
 
-        return cookieValue != null && cookieValue.trim().length() > 0 ? cookieValue : null;
+        return cookieValue;
     }
 
     private static boolean checkRequestForCaptchaSkipCookie( final PwmRequest pwmRequest )

@@ -20,17 +20,19 @@
 
 package password.pwm.util.debug;
 
-import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
+import password.pwm.PwmDomain;
+import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.svc.cache.CacheService;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
+import password.pwm.util.json.JsonProvider;
 
+import java.io.IOException;
 import java.io.OutputStream;
-import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-class CacheServiceDebugItemGenerator implements AppItemGenerator
+class CacheServiceDebugItemGenerator implements DomainItemGenerator
 {
     @Override
     public String getFilename()
@@ -39,12 +41,13 @@ class CacheServiceDebugItemGenerator implements AppItemGenerator
     }
 
     @Override
-    public void outputItem( final AppDebugItemInput debugItemInput, final OutputStream outputStream ) throws Exception
+    public void outputItem( final DomainDebugItemInput debugItemInput, final OutputStream outputStream )
+            throws IOException, PwmUnrecoverableException
     {
-        final PwmApplication pwmApplication = debugItemInput.getPwmApplication();
+        final PwmDomain pwmApplication = debugItemInput.getPwmDomain();
         final CacheService cacheService = pwmApplication.getCacheService();
 
-        final Map<String, Serializable> debugOutput = new LinkedHashMap<>( cacheService.debugInfo() );
-        outputStream.write( JsonUtil.serializeMap( debugOutput, JsonUtil.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
+        final Map<String, Object> debugOutput = new LinkedHashMap<>( cacheService.debugInfo() );
+        outputStream.write( JsonFactory.get().serializeMap( debugOutput, JsonProvider.Flag.PrettyPrint ).getBytes( PwmConstants.DEFAULT_CHARSET ) );
     }
 }

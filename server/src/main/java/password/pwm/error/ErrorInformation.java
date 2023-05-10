@@ -23,7 +23,6 @@ package password.pwm.error;
 import password.pwm.config.SettingReader;
 import password.pwm.http.PwmSession;
 
-import java.io.Serializable;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Locale;
@@ -33,7 +32,7 @@ import java.util.Locale;
  * (in the form of an {@link PwmError}), additional detailed error information for logging, and string substitutions
  * to use when presenting error messages to users.
  */
-public class ErrorInformation implements Serializable
+public class ErrorInformation
 {
     private final PwmError error;
     private final String detailedErrorMsg;
@@ -101,13 +100,13 @@ public class ErrorInformation implements Serializable
     {
         final StringBuilder sb = new StringBuilder();
         sb.append( error.getErrorCode() );
-        sb.append( " " );
-        sb.append( error.toString() );
+        sb.append( ' ' );
+        sb.append( error );
         if ( detailedErrorMsg != null && detailedErrorMsg.length() > 0 )
         {
             sb.append( " (" );
             sb.append( detailedErrorMsg );
-            sb.append( ( ")" ) );
+            sb.append( ')' );
         }
 
         if ( fieldValues != null && fieldValues.length > 0 )

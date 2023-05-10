@@ -24,8 +24,8 @@ import password.pwm.config.AppConfig;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.EnumUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 
 import javax.net.ssl.X509TrustManager;
@@ -92,7 +92,7 @@ public class CertificateReadingTrustManager implements X509TrustManager
             throw PwmUnrecoverableException.newException( PwmError.ERROR_CERTIFICATE_ERROR, msg );
         }
 
-        final boolean readOnlyRootCA = JavaHelper.enumArrayContainsValue( readCertificateFlags, X509Utils.ReadCertificateFlag.ReadOnlyRootCA );
+        final boolean readOnlyRootCA = EnumUtil.enumArrayContainsValue( readCertificateFlags, X509Utils.ReadCertificateFlag.ReadOnlyRootCA );
         if ( readOnlyRootCA )
         {
             final Optional<List<X509Certificate>> rootCA = X509Utils.extractRootCaCertificates( certificates );
@@ -117,7 +117,7 @@ public class CertificateReadingTrustManager implements X509TrustManager
         }
 
         LOGGER.debug( () -> "ServerCertReader: read self-signed certificates from remote server: "
-                + JsonUtil.serialize( new ArrayList<>( X509Utils.makeDebugInfoMap( certificates ) ) ) );
+                + JsonFactory.get().serialize( new ArrayList<>( X509CertInfo.makeDebugInfoMap( certificates ) ) ) );
         return Collections.unmodifiableList( certificates );
     }
 }

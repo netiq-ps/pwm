@@ -25,6 +25,10 @@ import com.novell.ldapchai.exception.ChaiOperationException;
 import com.novell.ldapchai.exception.ChaiUnavailableException;
 import com.novell.ldapchai.util.ConfigObjectRecord;
 import lombok.Value;
+import org.jrivard.xmlchai.AccessMode;
+import org.jrivard.xmlchai.XmlDocument;
+import org.jrivard.xmlchai.XmlElement;
+import org.jrivard.xmlchai.XmlFactory;
 import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
 import password.pwm.bean.SessionLabel;
@@ -34,24 +38,20 @@ import password.pwm.config.profile.LdapProfile;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.ldap.UserInfo;
 import password.pwm.svc.event.AuditEvent;
 import password.pwm.svc.event.AuditEventType;
 import password.pwm.svc.event.AuditRecordFactory;
 import password.pwm.svc.event.HelpdeskAuditRecord;
 import password.pwm.svc.event.UserAuditRecord;
+import password.pwm.user.UserInfo;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.StringUtil;
-import password.pwm.util.java.XmlDocument;
-import password.pwm.util.java.XmlElement;
-import password.pwm.util.java.XmlFactory;
 import password.pwm.util.logging.PwmLogger;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Serializable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -137,7 +137,7 @@ public class LdapXmlUserHistory implements UserHistoryStore
         {
             final String errorMsg = "error reading LDAP user event history for user " + userIdentity.toDisplayString() + ", error: " + e.getMessage();
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_INTERNAL, errorMsg );
-            LOGGER.error( errorInformation::toDebugStr, e );
+            LOGGER.error( sessionLabel, errorInformation::toDebugStr, e );
             throw new PwmUnrecoverableException( errorInformation, e );
         }
 
@@ -248,7 +248,7 @@ public class LdapXmlUserHistory implements UserHistoryStore
 
         public List<UserAuditRecord> asAuditRecords( final AuditRecordFactory auditRecordFactory, final UserInfo userInfoBean )
         {
-            final List<UserAuditRecord> returnList = new ArrayList<>();
+            final List<UserAuditRecord> returnList = new ArrayList<>( records.size() );
             for ( final StoredEvent loopEvent : records )
             {
                 returnList.add( auditRecordFactory.fromStoredRecord( loopEvent, userInfoBean ) );
@@ -278,15 +278,15 @@ public class LdapXmlUserHistory implements UserHistoryStore
                     }
                     if ( loopEvent.getMessage() != null )
                     {
-                        hrElement.addText( loopEvent.getMessage() );
+                        hrElement.setText( loopEvent.getMessage() );
                     }
-                    doc.getRootElement().addContent( hrElement );
+                    doc.getRootElement().attachElement( hrElement );
                 }
             }
 
             try ( ByteArrayOutputStream outputStream = new ByteArrayOutputStream() )
             {
-                xmlFactory.outputDocument( doc,  outputStream, XmlFactory.OutputFlag.Compact );
+                xmlFactory.output( doc,  outputStream, XmlFactory.OutputFlag.Compact );
                 return outputStream.toString( PwmConstants.DEFAULT_CHARSET );
             }
             catch ( final IOException e )
@@ -307,20 +307,20 @@ public class LdapXmlUserHistory implements UserHistoryStore
             try ( InputStream inputStream = new ByteArrayInputStream( input.getBytes( PwmConstants.DEFAULT_CHARSET ) ) )
             {
                 final XmlFactory xmlFactory = XmlFactory.getFactory();
-                final XmlDocument xmlDocument = xmlFactory.parseXml( inputStream );
+                final XmlDocument xmlDocument = xmlFactory.parse( inputStream, AccessMode.IMMUTABLE );
                 final XmlElement rootElement = xmlDocument.getRootElement();
 
                 for ( final XmlElement hrElement : rootElement.getChildren( XML_NODE_RECORD ) )
                 {
-                    hrElement.getAttributeValue( XML_ATTR_TIMESTAMP ).ifPresent( ( timeStampStr ->
+                    hrElement.getAttribute( XML_ATTR_TIMESTAMP ).ifPresent( ( timeStampStr ->
                     {
                         final long timeStamp = Long.parseLong( timeStampStr );
-                        hrElement.getAttributeValue( XML_ATTR_TRANSACTION )
+                        hrElement.getAttribute( XML_ATTR_TRANSACTION )
                                 .flatMap( AuditEvent::forKey )
                                 .ifPresent( ( eventCode ) ->
                         {
-                            final String srcAddr = hrElement.getAttributeValue( XML_ATTR_SRC_IP ).orElse( "" );
-                            final String srcHost = hrElement.getAttributeValue( XML_ATTR_SRC_HOST ).orElse( "" );
+                            final String srcAddr = hrElement.getAttribute( XML_ATTR_SRC_IP ).orElse( "" );
+                            final String srcHost = hrElement.getAttribute( XML_ATTR_SRC_HOST ).orElse( "" );
                             final String message = hrElement.getText().orElse( "" );
                             final StoredEvent storedEvent = new StoredEvent( eventCode, timeStamp, message, srcAddr, srcHost );
                             returnHistory.addEvent( storedEvent );
@@ -328,7 +328,7 @@ public class LdapXmlUserHistory implements UserHistoryStore
                     } ) );
                 }
             }
-            catch ( final PwmUnrecoverableException | IOException e )
+            catch ( final IOException e )
             {
                 LOGGER.error( () -> "error parsing user event history record: " + e.getMessage() );
             }
@@ -337,7 +337,7 @@ public class LdapXmlUserHistory implements UserHistoryStore
     }
 
     @Value
-    public static class StoredEvent implements Serializable
+    public static class StoredEvent
     {
         private final AuditEvent auditEvent;
         private final long timestamp;

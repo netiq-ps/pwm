@@ -37,7 +37,6 @@ import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmHttpRequestWrapper;
 import password.pwm.http.PwmRequest;
-import password.pwm.ldap.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.ldap.permission.UserPermissionType;
 import password.pwm.ldap.permission.UserPermissionUtility;
@@ -47,6 +46,7 @@ import password.pwm.svc.event.AuditServiceClient;
 import password.pwm.svc.event.HelpdeskAuditRecord;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
+import password.pwm.user.UserInfo;
 import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
@@ -56,6 +56,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 public class HelpdeskServletUtil
 {
@@ -78,7 +79,7 @@ public class HelpdeskServletUtil
 
         for ( final String objectClass : defaultObjectClasses )
         {
-            filter.append( "(objectClass=" ).append( objectClass ).append( ")" );
+            filter.append( "(objectClass=" ).append( objectClass ).append( ')' );
         }
 
         // open OR clause for attributes
@@ -89,15 +90,19 @@ public class HelpdeskServletUtil
             if ( formConfiguration != null && formConfiguration.getName() != null )
             {
                 final String searchAttribute = formConfiguration.getName();
-                filter.append( "(" ).append( searchAttribute ).append( "=*" ).append( PwmConstants.VALUE_REPLACEMENT_USERNAME ).append( "*)" );
+                filter.append( '(' )
+                        .append( searchAttribute )
+                        .append( "=*" )
+                        .append( PwmConstants.VALUE_REPLACEMENT_USERNAME )
+                        .append( "*)" );
             }
         }
 
         // close OR clause
-        filter.append( ")" );
+        filter.append( ')' );
 
         // close AND clause
-        filter.append( ")" );
+        filter.append( ')' );
         return filter.toString();
     }
 
@@ -125,7 +130,7 @@ public class HelpdeskServletUtil
 
         for ( final String objectClass : defaultObjectClasses )
         {
-            filter.append( "(objectClass=" ).append( objectClass ).append( ")" );
+            filter.append( "(objectClass=" ).append( objectClass ).append( ')' );
         }
 
         // open AND clause for attributes
@@ -139,32 +144,27 @@ public class HelpdeskServletUtil
                 final String value = attributesInSearchRequest.get( searchAttribute );
                 if ( StringUtil.notEmpty( value ) )
                 {
-                    filter.append( "(" ).append( searchAttribute ).append( "=" );
+                    filter.append( '(' ).append( searchAttribute ).append( '=' );
 
-                    switch ( formConfiguration.getType() )
+                    if ( formConfiguration.getType() == FormConfiguration.Type.select )
                     {
-                        case select:
-                        {
-                            // value is specified by admin, so wildcards are not required
-                            filter.append( "%" ).append( searchAttribute ).append( "%)" );
-                        }
-                        break;
+                        // value is specified by admin, so wildcards are not required
+                        filter.append( '%' ).append( searchAttribute ).append( "%)" );
+                    }
+                    else
 
-                        default:
-                        {
-                            filter.append( "*%" ).append( searchAttribute ).append( "%*)" );
-                        }
-                        break;
+                    {
+                        filter.append( "*%" ).append( searchAttribute ).append( "%*)" );
                     }
                 }
             }
         }
 
         // close OR clause
-        filter.append( ")" );
+        filter.append( ')' );
 
         // close AND clause
-        filter.append( ")" );
+        filter.append( ')' );
         return filter.toString();
     }
 
@@ -219,7 +219,7 @@ public class HelpdeskServletUtil
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_UNAUTHORIZED, errorMsg );
             throw new PwmUnrecoverableException( errorInformation );
         }
-        LOGGER.trace( pwmRequest, () -> "helpdesk detail view request for user details of " + userIdentity.toString() + " by actor " + actorUserIdentity.toString() );
+        LOGGER.trace( pwmRequest, () -> "helpdesk detail view request for user details of " + userIdentity.toString() + " by actor " + actorUserIdentity );
 
         final HelpdeskVerificationStateBean verificationStateBean = HelpdeskVerificationStateBean.fromClientString(
                 pwmRequest,
@@ -248,16 +248,17 @@ public class HelpdeskServletUtil
         return helpdeskDetailInfoBean;
     }
 
-    static UserIdentity userIdentityFromMap( final PwmRequest pwmRequest, final Map<String, String> bodyMap ) throws PwmUnrecoverableException
+    static UserIdentity userIdentityFromMap( final PwmRequest pwmRequest, final Map<String, String> bodyMap )
+            throws PwmUnrecoverableException
     {
         final String userKey = bodyMap.get( "userKey" );
-        if ( userKey == null || userKey.length() < 1 )
+        if ( StringUtil.isEmpty( userKey ) )
         {
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_MISSING_PARAMETER, "userKey parameter is missing" );
             throw new PwmUnrecoverableException( errorInformation );
         }
 
-        return UserIdentity.fromObfuscatedKey( userKey, pwmRequest.getPwmApplication() );
+        return HelpdeskServletUtil.clarifyUserIdentity( pwmRequest, userKey );
     }
 
 
@@ -331,7 +332,7 @@ public class HelpdeskServletUtil
         final boolean useProxy = helpdeskProfile.readSettingAsBoolean( PwmSetting.HELPDESK_USE_PROXY );
         return useProxy
                 ? pwmRequest.getPwmDomain().getProxiedChaiUser( pwmRequest.getLabel(), userIdentity )
-                : pwmRequest.getPwmSession().getSessionManager().getActor( userIdentity );
+                : pwmRequest.getClientConnectionHolder().getActor( userIdentity );
     }
 
     static UserInfo getTargetUserInfo(
@@ -350,6 +351,27 @@ public class HelpdeskServletUtil
         );
     }
 
+    static String obfuscateUserIdentity( final PwmRequest pwmRequest, final UserIdentity userIdentity )
+    {
+        try
+        {
+            return pwmRequest.encryptObjectToString( userIdentity );
+        }
+        catch ( final PwmUnrecoverableException e )
+        {
+            throw new IllegalStateException( "unexpected error encoding userIdentity: " + e.getMessage() );
+        }
+    }
+
+    static UserIdentity clarifyUserIdentity( final PwmRequest pwmRequest, final String input )
+            throws PwmUnrecoverableException
+    {
+        Objects.requireNonNull( input );
+
+        return pwmRequest.decryptObject( input, UserIdentity.class );
+    }
+
+
     static MacroRequest getTargetUserMacroRequest(
             final PwmRequest pwmRequest,
             final HelpdeskProfile helpdeskProfile,
@@ -364,13 +386,11 @@ public class HelpdeskServletUtil
                 pwmRequest.getPwmSession().getLoginInfoBean()
         );
 
-        /*
         if ( targetUserIdentity != null )
         {
             final UserInfo targetUserInfo = getTargetUserInfo( pwmRequest, helpdeskProfile, targetUserIdentity );
             return macroRequest.toBuilder().targetUserInfo( targetUserInfo ).build();
         }
-         */
 
         return macroRequest;
     }

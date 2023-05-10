@@ -20,7 +20,6 @@
 
 package password.pwm.http.servlet.configguide;
 
-import com.google.gson.reflect.TypeToken;
 import com.novell.ldapchai.exception.ChaiUnavailableException;
 import password.pwm.AppProperty;
 import password.pwm.PwmApplication;
@@ -28,6 +27,7 @@ import password.pwm.PwmApplicationMode;
 import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
 import password.pwm.bean.DomainID;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.SessionLabel;
 import password.pwm.config.AppConfig;
 import password.pwm.config.PwmSetting;
@@ -61,15 +61,19 @@ import password.pwm.http.bean.ConfigGuideBean;
 import password.pwm.http.servlet.AbstractPwmServlet;
 import password.pwm.http.servlet.ControlledPwmServlet;
 import password.pwm.http.servlet.configeditor.ConfigEditorServletUtils;
+import password.pwm.http.servlet.configeditor.DomainManageMode;
+import password.pwm.http.servlet.configeditor.ReadSettingResponse;
 import password.pwm.http.servlet.configeditor.data.NavTreeSettings;
 import password.pwm.http.servlet.configeditor.data.SettingData;
 import password.pwm.http.servlet.configeditor.data.SettingDataMaker;
 import password.pwm.i18n.Message;
 import password.pwm.ldap.LdapBrowser;
 import password.pwm.ldap.schema.SchemaOperationResult;
-import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.EnumUtil;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.secure.X509Utils;
 import password.pwm.ws.server.RestResultBean;
@@ -79,14 +83,11 @@ import password.pwm.ws.server.rest.bean.PublicHealthRecord;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import java.io.IOException;
-import java.io.Serializable;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -101,10 +102,17 @@ import java.util.Optional;
 )
 public class ConfigGuideServlet extends ControlledPwmServlet
 {
-
     private static final PwmLogger LOGGER = PwmLogger.getLogger( ConfigGuideServlet.class.getName() );
 
-    private static final String LDAP_PROFILE_KEY = PwmConstants.PROFILE_ID_DEFAULT;
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
+
+    private static final ProfileID LDAP_PROFILE_KEY = ProfileID.PROFILE_ID_DEFAULT;
+    public static final String PARAM_STEP = "step";
+    public static final String PARAM_KEY = "key";
 
     public enum ConfigGuideAction implements AbstractPwmServlet.ProcessAction
     {
@@ -119,8 +127,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
         skipGuide( HttpMethod.POST ),
         readSetting( HttpMethod.POST ),
         writeSetting( HttpMethod.POST ),
-        settingData( HttpMethod.GET ),;
-
+        settingData( HttpMethod.POST ),;
 
         private final HttpMethod method;
 
@@ -137,9 +144,9 @@ public class ConfigGuideServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return ConfigGuideAction.class;
+        return Optional.of( ConfigGuideAction.class );
     }
 
     static ConfigGuideBean getBean( final PwmRequest pwmRequest ) throws PwmUnrecoverableException
@@ -188,7 +195,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
                 final URI ldapServerUri = new URI( ldapServerString );
                 if ( "ldaps".equalsIgnoreCase( ldapServerUri.getScheme() ) )
                 {
-                    final AppConfig tempConfig = new AppConfig( ConfigGuideForm.generateStoredConfig( configGuideBean ) );
+                    final AppConfig tempConfig = AppConfig.forStoredConfig( ConfigGuideForm.generateStoredConfig( configGuideBean ) );
                     configGuideBean.setLdapCertificates( X509Utils.readRemoteCertificates( ldapServerUri, tempConfig ) );
                     configGuideBean.setCertsTrustedbyKeystore( X509Utils.testIfLdapServerCertsInDefaultKeystore( ldapServerUri ) );
                 }
@@ -208,7 +215,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "uploadConfig" )
-    private ProcessStatus restUploadConfig( final PwmRequest pwmRequest )
+    public ProcessStatus restUploadConfig( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException, ServletException
     {
         ConfigGuideUtils.restUploadConfig( pwmRequest );
@@ -216,7 +223,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "useConfiguredCerts" )
-    private ProcessStatus restUseConfiguredCerts(
+    public ProcessStatus restUseConfiguredCerts(
             final PwmRequest pwmRequest
     )
             throws PwmUnrecoverableException, IOException
@@ -230,7 +237,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "ldapHealth" )
-    private ProcessStatus restLdapHealth(
+    public ProcessStatus restLdapHealth(
             final PwmRequest pwmRequest
     )
             throws IOException, PwmUnrecoverableException
@@ -238,7 +245,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
         final ConfigGuideBean configGuideBean = getBean( pwmRequest );
 
         final StoredConfiguration storedConfiguration = ConfigGuideForm.generateStoredConfig( configGuideBean );
-        final AppConfig tempAppConfig = new AppConfig( storedConfiguration );
+        final AppConfig tempAppConfig = AppConfig.forStoredConfig( storedConfiguration );
         final PwmApplication tempApplication = PwmApplication.createPwmApplication( pwmRequest.getPwmApplication()
                 .getPwmEnvironment()
                 .makeRuntimeInstance( tempAppConfig ) );
@@ -328,7 +335,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
             break;
 
             default:
-                JavaHelper.unhandledSwitchStatement( configGuideBean.getStep() );
+                PwmUtil.unhandledSwitchStatement( configGuideBean.getStep() );
         }
 
         final PublicHealthData jsonOutput = PublicHealthData.builder()
@@ -336,13 +343,13 @@ public class ConfigGuideServlet extends ControlledPwmServlet
                 .timestamp( Instant.now() )
                 .overall( HealthUtils.getMostSevereHealthStatus( records ).toString() )
                 .build();
-        final RestResultBean restResultBean = RestResultBean.withData( jsonOutput );
+        final RestResultBean restResultBean = RestResultBean.withData( jsonOutput, PublicHealthData.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "browseLdap" )
-    private ProcessStatus restBrowseLdap(
+    public ProcessStatus restBrowseLdap(
             final PwmRequest pwmRequest
     )
             throws IOException, PwmUnrecoverableException
@@ -365,7 +372,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
 
         final LdapBrowser ldapBrowser = new LdapBrowser(
                 pwmRequest.getLabel(),
-                pwmRequest.getPwmDomain().getLdapConnectionService().getChaiProviderFactory(),
+                pwmRequest.getPwmDomain().getLdapService().getChaiProviderFactory(),
                 storedConfiguration
         );
         final LdapBrowser.LdapBrowseResult result = ldapBrowser.doBrowse( domainID, ConfigGuideForm.LDAP_PROFILE_NAME, dn );
@@ -373,15 +380,15 @@ public class ConfigGuideServlet extends ControlledPwmServlet
 
         LOGGER.trace( pwmRequest, () -> "performed ldapBrowse operation in "
                 + TimeDuration.compactFromCurrent( startTime )
-                + ", result=" + JsonUtil.serialize( result ) );
+                + ", result=" + JsonFactory.get().serialize( result ) );
 
-        pwmRequest.outputJsonResult( RestResultBean.withData( result ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( result, LdapBrowser.LdapBrowseResult.class ) );
 
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "updateForm" )
-    private ProcessStatus restUpdateForm(
+    public ProcessStatus restUpdateForm(
             final PwmRequest pwmRequest
     )
             throws IOException, PwmUnrecoverableException
@@ -389,9 +396,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
         final ConfigGuideBean configGuideBean = getBean( pwmRequest );
 
         final String bodyString = pwmRequest.readRequestBodyAsString();
-        final Map<ConfigGuideFormField, String> incomingFormData = JsonUtil.deserialize( bodyString, new TypeToken<Map<ConfigGuideFormField, String>>()
-        {
-        } );
+        final Map<ConfigGuideFormField, String> incomingFormData = JsonFactory.get().deserializeMap( bodyString, ConfigGuideFormField.class, String.class );
 
         if ( incomingFormData != null )
         {
@@ -404,93 +409,26 @@ public class ConfigGuideServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "gotoStep" )
-    private ProcessStatus restGotoStep( final PwmRequest pwmRequest )
+    public ProcessStatus restGotoStep( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException, ServletException
     {
         final ConfigGuideBean configGuideBean = getBean( pwmRequest );
 
-        final String requestedStep = pwmRequest.readParameterAsString( "step" );
-        GuideStep step = GuideStep.START;
-        if ( requestedStep != null && requestedStep.length() > 0 )
-        {
-            try
-            {
-                step = GuideStep.valueOf( requestedStep );
-            }
-            catch ( final IllegalArgumentException e )
-            {
-                final String errorMsg = "unknown goto step request: " + requestedStep;
-                LOGGER.error( pwmRequest, () -> errorMsg );
-            }
-        }
+        final String requestedStep = pwmRequest.readParameterAsString( PARAM_STEP );
 
-        if ( step == GuideStep.START )
-        {
-            configGuideBean.getFormData().clear();
-            configGuideBean.getFormData().putAll( ConfigGuideForm.defaultForm() );
-        }
-        else if ( step == GuideStep.NEXT )
-        {
-            step = configGuideBean.getStep().next();
-            while ( step != GuideStep.FINISH && !step.visible( configGuideBean ) )
-            {
-                step = step.next();
-            }
-        }
-        else if ( step == GuideStep.PREVIOUS )
-        {
-            step = configGuideBean.getStep().previous();
-            while ( step != GuideStep.START && !step.visible( configGuideBean ) )
-            {
-                step = step.previous();
-            }
-        }
+        final GuideStep inputStep = StringUtil.isEmpty( requestedStep )
+                ? GuideStep.START
+                : EnumUtil.readEnumFromString( GuideStep.class, requestedStep )
+                                .orElseThrow( () -> PwmUnrecoverableException.newException(
+                                        PwmError.ERROR_INTERNAL, "unknown step value" ) );
 
-        if ( step == GuideStep.FINISH )
-        {
-            final ContextManager contextManager = ContextManager.getContextManager( pwmRequest );
-            try
-            {
-                ConfigGuideUtils.writeConfig( contextManager, configGuideBean );
-                pwmRequest.getPwmSession().getSessionStateBean().setTheme( null );
-            }
-            catch ( final PwmException e )
-            {
-                final RestResultBean restResultBean = RestResultBean.fromError( e.getErrorInformation(), pwmRequest );
-                pwmRequest.outputJsonResult( restResultBean );
-                return ProcessStatus.Halt;
-            }
-            catch ( final Exception e )
-            {
-                LOGGER.error( pwmRequest, () -> "error during save: " + e.getMessage(), e );
-                final RestResultBean restResultBean = RestResultBean.fromError( new ErrorInformation(
-                        PwmError.ERROR_INTERNAL,
-                        "error during save: " + e.getMessage()
-                ), pwmRequest );
-                pwmRequest.outputJsonResult( restResultBean );
-                return ProcessStatus.Halt;
-            }
-            final HashMap<String, String> resultData = new HashMap<>();
-            resultData.put( "serverRestart", "true" );
-            pwmRequest.outputJsonResult( RestResultBean.withData( resultData ) );
-            pwmRequest.invalidateSession();
-        }
-        else
-        {
-            configGuideBean.setStep( step );
-            pwmRequest.outputJsonResult( RestResultBean.forSuccessMessage( pwmRequest, Message.Success_Unknown ) );
+        final GuideStep nextEffectiveStep = ConfigGuideUtils.figureNextEffectiveStep( configGuideBean, inputStep );
 
-            {
-                final GuideStep finalStep = step;
-                LOGGER.trace( () -> "setting current step to: " + finalStep );
-            }
-        }
-
-        return ProcessStatus.Continue;
+        return ConfigGuideUtils.executeNextStep( pwmRequest, configGuideBean, nextEffectiveStep );
     }
 
     @ActionHandler( action = "extendSchema" )
-    private ProcessStatus restExtendSchema( final PwmRequest pwmRequest )
+    public ProcessStatus restExtendSchema( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException
     {
         final ConfigGuideBean configGuideBean = getBean( pwmRequest );
@@ -498,20 +436,22 @@ public class ConfigGuideServlet extends ControlledPwmServlet
         try
         {
             final SchemaOperationResult schemaOperationResult = ConfigGuideUtils.extendSchema( pwmRequest.getPwmDomain(), configGuideBean, true );
-            pwmRequest.outputJsonResult( RestResultBean.withData( schemaOperationResult.getOperationLog() ) );
+            pwmRequest.outputJsonResult( RestResultBean.withData(
+                    schemaOperationResult.getOperationLog(),
+                    String.class ) );
         }
         catch ( final Exception e )
         {
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_INTERNAL, e.getMessage() );
             pwmRequest.outputJsonResult( RestResultBean.fromError( errorInformation, pwmRequest ) );
-            LOGGER.error( pwmRequest, () -> e.getMessage(), e );
+            LOGGER.error( pwmRequest, e::getMessage, e );
         }
 
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "uploadJDBCDriver" )
-    private ProcessStatus restUploadJDBCDriver( final PwmRequest pwmRequest )
+    public ProcessStatus restUploadJDBCDriver( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException, ServletException
     {
         try
@@ -534,7 +474,7 @@ public class ConfigGuideServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "skipGuide" )
-    private ProcessStatus restSkipGuide( final PwmRequest pwmRequest ) throws PwmUnrecoverableException, IOException
+    public ProcessStatus restSkipGuide( final PwmRequest pwmRequest ) throws PwmUnrecoverableException, IOException
     {
         final Map<String, String> inputJson = pwmRequest.readBodyAsJsonStringMap( PwmHttpRequestWrapper.Flag.BypassValidation );
         final String password = inputJson.get( "password" );
@@ -557,95 +497,96 @@ public class ConfigGuideServlet extends ControlledPwmServlet
     }
 
     @ActionHandler( action = "readSetting" )
-    private ProcessStatus restReadSetting( final PwmRequest pwmRequest ) throws PwmUnrecoverableException, IOException
+    public ProcessStatus restReadSetting( final PwmRequest pwmRequest ) throws PwmUnrecoverableException, IOException
     {
-        final String profileID = "default";
         final ConfigGuideBean configGuideBean = getBean( pwmRequest );
         final StoredConfiguration storedConfiguration = ConfigGuideForm.generateStoredConfig( configGuideBean );
 
-        final String settingKey = pwmRequest.readParameterAsString( "key" );
-        final LinkedHashMap<String, Object> returnMap = new LinkedHashMap<>();
+        final String settingKey = pwmRequest.readParameterAsString( PARAM_KEY );
         final PwmSetting pwmSetting = PwmSetting.forKey( settingKey )
                 .orElseThrow( () -> new IllegalStateException( "invalid setting parameter value" ) );
 
-        final StoredConfigKey key = StoredConfigKey.forSetting( pwmSetting, profileID, DomainID.DOMAIN_ID_DEFAULT );
+        final StoredConfigKey key = StoredConfigKey.forSetting( pwmSetting, ConfigGuideForm.LDAP_PROFILE_NAME, DomainID.DOMAIN_ID_DEFAULT );
 
-        final Object returnValue;
-        returnValue = StoredConfigurationUtil.getValueOrDefault( storedConfiguration, key ).toNativeObject();
-        returnMap.put( "isDefault", StoredConfigurationUtil.isDefaultValue( storedConfiguration, key ) );
-        returnMap.put( "key", settingKey );
-        returnMap.put( "category", pwmSetting.getCategory().toString() );
-        returnMap.put( "syntax", pwmSetting.getSyntax().toString() );
+        final ReadSettingResponse readSettingResponse = ReadSettingResponse.builder()
+                .isDefault( StoredConfigurationUtil.isDefaultValue( storedConfiguration, key ) )
+                .key( settingKey )
+                .category( pwmSetting.getCategory().toString() )
+                .syntax( pwmSetting.getSyntax().toString() )
+                .value( StoredConfigurationUtil.getValueOrDefault( storedConfiguration, key ).toNativeObject() )
+                .build();
 
-        returnMap.put( "value", returnValue );
-        pwmRequest.outputJsonResult( RestResultBean.withData( returnMap ) );
+        pwmRequest.outputJsonResult( RestResultBean.withData( readSettingResponse, ReadSettingResponse.class ) );
 
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "writeSetting" )
-    private ProcessStatus restWriteSetting( final PwmRequest pwmRequest )
+    public ProcessStatus restWriteSetting( final PwmRequest pwmRequest )
             throws PwmUnrecoverableException, IOException
     {
-        final String profileID = "default";
-        final String settingKey = pwmRequest.readParameterAsString( "key" );
         final String bodyString = pwmRequest.readRequestBodyAsString();
-        final PwmSetting pwmSetting = PwmSetting.forKey( settingKey )
+        final PwmSetting pwmSetting = PwmSetting.forKey( pwmRequest.readParameterAsString( PARAM_KEY ) )
                 .orElseThrow( () -> new IllegalStateException( "invalid setting parameter value" ) );
 
         final ConfigGuideBean configGuideBean = getBean( pwmRequest );
         final StoredConfiguration storedConfiguration = ConfigGuideForm.generateStoredConfig( configGuideBean );
 
-        final StoredConfigKey key = StoredConfigKey.forSetting( pwmSetting, profileID, DomainID.DOMAIN_ID_DEFAULT );
-
-        final LinkedHashMap<String, Object> returnMap = new LinkedHashMap<>();
+        final StoredConfigKey key = StoredConfigKey.forSetting( pwmSetting, ConfigGuideForm.LDAP_PROFILE_NAME, DomainID.DOMAIN_ID_DEFAULT );
 
         try
         {
             final StoredValue storedValue = ValueFactory.fromJson( pwmSetting, bodyString );
-            final List<String> errorMsgs = storedValue.validateValue( pwmSetting );
-            if ( errorMsgs != null && !errorMsgs.isEmpty() )
+            final List<String> errorMessages = storedValue.validateValue( pwmSetting );
+            if ( errorMessages != null && !errorMessages.isEmpty() )
             {
-                returnMap.put( "errorMessage", pwmSetting.getLabel( pwmRequest.getLocale() ) + ": " + errorMsgs.get( 0 ) );
+                final String msg = pwmSetting.getLabel( pwmRequest.getLocale() ) + ": " + errorMessages.get( 0 );
+                throw new PwmUnrecoverableException( new ErrorInformation( PwmError.CONFIG_FORMAT_ERROR, msg ) );
             }
 
             if ( pwmSetting == PwmSetting.CHALLENGE_RANDOM_CHALLENGES )
             {
-                configGuideBean.getFormData().put( ConfigGuideFormField.CHALLENGE_RESPONSE_DATA, JsonUtil.serialize( (Serializable) storedValue.toNativeObject() ) );
+                configGuideBean.getFormData().put( ConfigGuideFormField.CHALLENGE_RESPONSE_DATA, JsonFactory.get().serialize( storedValue.toNativeObject() ) );
             }
         }
         catch ( final Exception e )
         {
+            if ( e instanceof PwmUnrecoverableException )
+            {
+                throw ( PwmUnrecoverableException ) e;
+            }
+
             final String errorMsg = "error writing default value for setting " + pwmSetting + ", error: " + e.getMessage();
-            LOGGER.error( () -> errorMsg, e );
-            throw new IllegalStateException( errorMsg, e );
+            throw new PwmUnrecoverableException( new ErrorInformation( PwmError.CONFIG_FORMAT_ERROR, errorMsg ) );
         }
-        returnMap.put( "key", settingKey );
-        returnMap.put( "category", pwmSetting.getCategory().toString() );
-        returnMap.put( "syntax", pwmSetting.getSyntax().toString() );
-        returnMap.put( "isDefault", StoredConfigurationUtil.isDefaultValue( storedConfiguration, key ) );
-        pwmRequest.outputJsonResult( RestResultBean.withData( returnMap ) );
 
+        final ReadSettingResponse readSettingResponse = ReadSettingResponse.builder()
+                .key( pwmSetting.getKey() )
+                .category( pwmSetting.getCategory().toString() )
+                .syntax( pwmSetting.getSyntax().toString() )
+                .isDefault( StoredConfigurationUtil.isDefaultValue( storedConfiguration, key ) )
+                .build();
 
+        pwmRequest.outputJsonResult( RestResultBean.withData( readSettingResponse, ReadSettingResponse.class ) );
         return ProcessStatus.Halt;
     }
 
     @ActionHandler( action = "settingData" )
-    private ProcessStatus restSettingData( final PwmRequest pwmRequest )
+    public ProcessStatus restSettingData( final PwmRequest pwmRequest )
             throws IOException, PwmUnrecoverableException
     {
         final ConfigGuideBean configGuideBean = getBean( pwmRequest );
         final StoredConfiguration storedConfiguration = ConfigGuideForm.generateStoredConfig( configGuideBean );
 
         final SettingData settingData = SettingDataMaker.generateSettingData(
-                ConfigGuideForm.DOMAIN_ID,
+                DomainID.systemId(),
                 storedConfiguration,
                 pwmRequest.getLabel(),
                 pwmRequest.getLocale(),
-                NavTreeSettings.forBasic()
+                NavTreeSettings.builder().domainManageMode( DomainManageMode.single ).build()
         );
 
-        final RestResultBean restResultBean = RestResultBean.withData( settingData );
+        final RestResultBean<SettingData> restResultBean = RestResultBean.withData( settingData, SettingData.class );
         pwmRequest.outputJsonResult( restResultBean );
         return ProcessStatus.Halt;
     }

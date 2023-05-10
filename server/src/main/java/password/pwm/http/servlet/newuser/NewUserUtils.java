@@ -55,12 +55,12 @@ import password.pwm.http.PwmRequestAttribute;
 import password.pwm.http.PwmSession;
 import password.pwm.http.bean.NewUserBean;
 import password.pwm.http.servlet.forgottenpw.RemoteVerificationMethod;
-import password.pwm.ldap.UserInfo;
-import password.pwm.ldap.UserInfoBean;
+import password.pwm.user.UserInfo;
+import password.pwm.user.UserInfoBean;
 import password.pwm.ldap.auth.PwmAuthenticationSource;
 import password.pwm.ldap.auth.SessionAuthenticator;
 import password.pwm.ldap.search.SearchConfiguration;
-import password.pwm.ldap.search.UserSearchEngine;
+import password.pwm.ldap.search.UserSearchService;
 import password.pwm.svc.event.AuditEvent;
 import password.pwm.svc.event.AuditServiceClient;
 import password.pwm.svc.stats.Statistic;
@@ -70,8 +70,8 @@ import password.pwm.svc.token.TokenUtil;
 import password.pwm.util.PasswordData;
 import password.pwm.util.form.FormUtility;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
@@ -79,6 +79,7 @@ import password.pwm.util.macro.MacroReplacer;
 import password.pwm.util.macro.MacroRequest;
 import password.pwm.util.operations.ActionExecutor;
 import password.pwm.util.password.PasswordUtility;
+import password.pwm.util.password.RandomGeneratorConfig;
 import password.pwm.util.password.RandomPasswordGenerator;
 import password.pwm.ws.client.rest.form.FormDataRequestBean;
 import password.pwm.ws.client.rest.form.FormDataResponseBean;
@@ -212,9 +213,9 @@ class NewUserUtils
             NewUserUtils.LOGGER.trace( pwmRequest, () -> "will use temporary password process for new user entry: " + newUserDN );
             final PasswordData temporaryPassword;
             {
-                final RandomPasswordGenerator.RandomGeneratorConfig randomGeneratorConfig = RandomPasswordGenerator.RandomGeneratorConfig.builder()
-                        .passwordPolicy( newUserProfile.getNewUserPasswordPolicy( pwmRequest.getPwmRequestContext() ) )
-                        .build();
+                final RandomGeneratorConfig randomGeneratorConfig = RandomGeneratorConfig.make( pwmRequest.getPwmDomain(),
+                         newUserProfile.getNewUserPasswordPolicy( pwmRequest.getPwmRequestContext() ) );
+
                 temporaryPassword = RandomPasswordGenerator.createRandomPassword( pwmRequest.getLabel(), randomGeneratorConfig, pwmDomain );
             }
             final ChaiUser proxiedUser = chaiProvider.getEntryFactory().newChaiUser( newUserDN );
@@ -259,7 +260,7 @@ class NewUserUtils
                         .setSetting( ChaiSetting.BIND_DN, newUserDN )
                         .setSetting( ChaiSetting.BIND_PASSWORD, temporaryPassword.getStringValue() )
                         .build();
-                final ChaiProvider bindAsProvider = pwmDomain.getLdapConnectionService().getChaiProviderFactory().newProvider( chaiConfiguration );
+                final ChaiProvider bindAsProvider = pwmDomain.getLdapService().getChaiProviderFactory().newProvider( chaiConfiguration );
                 final ChaiUser bindAsUser = bindAsProvider.getEntryFactory().newChaiUser( newUserDN );
                 bindAsUser.changePassword( temporaryPassword.getStringValue(), userPassword.getStringValue() );
                 NewUserUtils.LOGGER.debug( pwmRequest, () -> "changed to user requested password for new user entry: " + newUserDN );
@@ -312,7 +313,7 @@ class NewUserUtils
         remoteWriteFormData( pwmRequest, newUserForm );
 
         // authenticate the user to pwm
-        final UserIdentity userIdentity = UserIdentity.create( newUserDN, newUserProfile.getLdapProfile( pwmDomain.getConfig() ).getIdentifier(), pwmRequest.getDomainID() );
+        final UserIdentity userIdentity = UserIdentity.create( newUserDN, newUserProfile.getLdapProfile( pwmDomain.getConfig() ).getId(), pwmRequest.getDomainID() );
         final SessionAuthenticator sessionAuthenticator = new SessionAuthenticator( pwmDomain, pwmRequest, PwmAuthenticationSource.NEW_USER_REGISTRATION );
         sessionAuthenticator.authenticateUser( userIdentity, userPassword );
 
@@ -326,7 +327,7 @@ class NewUserUtils
 
                 final ActionExecutor actionExecutor = new ActionExecutor.ActionExecutorSettings( pwmDomain, userIdentity )
                         .setExpandPwmMacros( true )
-                        .setMacroMachine( pwmRequest.getPwmSession().getSessionManager().getMacroMachine( ) )
+                        .setMacroMachine( pwmRequest.getMacroMachine( ) )
                         .createActionExecutor();
 
                 actionExecutor.executeActions( actions, pwmRequest.getLabel() );
@@ -365,7 +366,7 @@ class NewUserUtils
             NewUserUtils.LOGGER.error( pwmRequest, () -> "error deleting ldap user account " + userDN + ", " + e.getMessage() );
         }
 
-        pwmRequest.getPwmSession().unauthenticateUser( pwmRequest );
+        pwmRequest.getPwmSession().unAuthenticateUser( pwmRequest );
     }
 
     static String determineUserDN(
@@ -377,68 +378,56 @@ class NewUserUtils
         final NewUserProfile newUserProfile = NewUserServlet.getNewUserProfile( pwmRequest );
         final MacroRequest macroRequest = createMacroMachineForNewUser( pwmRequest.getPwmDomain(), newUserProfile, pwmRequest.getLabel(), formValues, null );
         final List<String> configuredNames = newUserProfile.readSettingAsStringArray( PwmSetting.NEWUSER_USERNAME_DEFINITION );
-        final List<String> failedValues = new ArrayList<>();
 
         final String configuredContext = newUserProfile.readSettingAsString( PwmSetting.NEWUSER_CONTEXT );
         final String expandedContext = macroRequest.expandMacros( configuredContext );
 
 
-        if ( configuredNames == null || configuredNames.isEmpty() || configuredNames.iterator().next().isEmpty() )
+        if ( configuredNames == null || configuredNames.isEmpty() || configuredNames.get( 0 ).isEmpty() )
         {
             final String namingAttribute = newUserProfile.getLdapProfile( pwmRequest.getPwmDomain().getConfig() ).readSettingAsString( PwmSetting.LDAP_NAMING_ATTRIBUTE );
-            String namingValue = null;
-            for ( final String formKey : formValues.getFormData().keySet() )
-            {
-                if ( formKey.equals( namingAttribute ) )
-                {
-                    namingValue = formValues.getFormData().get( formKey );
-                }
-            }
-            if ( namingValue == null || namingValue.isEmpty() )
+            final Optional<String> namingValue = formValues.getFormData().keySet().stream()
+                    .filter( formKey -> formKey.equals( namingAttribute ) )
+                    .findFirst();
+
+            if ( namingValue.isEmpty() )
             {
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_NEW_USER_FAILURE,
                         "username definition not set, and naming attribute is not present in form" ) );
             }
-            final String escapedName = StringUtil.escapeLdapDN( namingValue );
+
+            final String escapedName = StringUtil.escapeLdapDN( namingValue.get() );
             final String generatedDN = namingAttribute + "=" + escapedName + "," + expandedContext;
             NewUserUtils.LOGGER.debug( pwmRequest, () -> "generated dn for new user: " + generatedDN );
             return generatedDN;
         }
 
-        int attemptCount = 0;
-        final String generatedDN;
-        while ( attemptCount < configuredNames.size() )
+        final List<String> failedValues = new ArrayList<>( configuredNames.size() );
+        for ( final String configuredName : configuredNames )
         {
-            final String expandedName;
+            final String expandedName = macroRequest.expandMacros( configuredName );
             {
-                {
-                    final String configuredName = configuredNames.get( attemptCount );
-                    expandedName = macroRequest.expandMacros( configuredName );
-                }
-
                 if ( !testIfEntryNameExists( pwmRequest, expandedName ) )
                 {
                     NewUserUtils.LOGGER.trace( pwmRequest, () -> "generated entry name for new user is unique: " + expandedName );
                     final String namingAttribute = newUserProfile.getLdapProfile( pwmRequest.getPwmDomain().getConfig() ).readSettingAsString( PwmSetting.LDAP_NAMING_ATTRIBUTE );
                     final String escapedName = StringUtil.escapeLdapDN( expandedName );
-                    generatedDN = namingAttribute + "=" + escapedName + "," + expandedContext;
+                    final String generatedDN = namingAttribute + "=" + escapedName + "," + expandedContext;
                     NewUserUtils.LOGGER.debug( pwmRequest, () -> "generated dn for new user: " + generatedDN );
                     return generatedDN;
                 }
-                else
-                {
-                    failedValues.add( expandedName );
-                }
+
+                failedValues.add( expandedName );
             }
 
             NewUserUtils.LOGGER.debug( pwmRequest, () -> "generated entry name for new user is not unique, will try again" );
-            attemptCount++;
         }
 
-        final int attemptCountFinal = attemptCount;
         NewUserUtils.LOGGER.error( pwmRequest,
-                () -> "failed to generate new user DN after " + attemptCountFinal + " attempts, failed values: " + JsonUtil.serializeCollection(
-                        failedValues ) );
+                () -> "failed to generate new user DN after " + configuredNames.size()
+                        + " attempts, failed values: "
+                        + JsonFactory.get().serializeCollection( failedValues ) );
+
         throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_NEW_USER_FAILURE,
                 "unable to generate a unique DN value" ) );
     }
@@ -449,14 +438,14 @@ class NewUserUtils
     )
             throws PwmUnrecoverableException, ChaiUnavailableException
     {
-        final UserSearchEngine userSearchEngine = pwmRequest.getPwmDomain().getUserSearchEngine();
+        final UserSearchService userSearchService = pwmRequest.getPwmDomain().getUserSearchEngine();
         final SearchConfiguration searchConfiguration = SearchConfiguration.builder()
                 .username( rdnValue )
                 .build();
 
         try
         {
-            final Map<UserIdentity, Map<String, String>> results = userSearchEngine.performMultiUserSearch(
+            final Map<UserIdentity, Map<String, String>> results = userSearchService.performMultiUserSearch(
                     searchConfiguration, 2, Collections.emptyList(), pwmRequest.getLabel() );
             return results != null && !results.isEmpty();
         }
@@ -489,7 +478,7 @@ class NewUserUtils
         pwmRequest.getPwmDomain().getPwmApplication().getEmailQueue().submitEmail(
                 configuredEmailSetting,
                 pwmSession.getUserInfo(),
-                pwmSession.getSessionManager().getMacroMachine( )
+                pwmRequest.getMacroMachine( )
         );
     }
 
@@ -498,21 +487,29 @@ class NewUserUtils
             final NewUserProfile newUserProfile,
             final NewUserForm newUserForm
     )
-        throws PwmUnrecoverableException
+            throws PwmUnrecoverableException
 
     {
         final Map<String, String> formValues = newUserForm.getFormData();
 
         final String emailAddressAttribute = newUserProfile.getLdapProfile( pwmDomain.getConfig() ).readSettingAsString(
-            PwmSetting.EMAIL_USER_MAIL_ATTRIBUTE );
+                PwmSetting.EMAIL_USER_MAIL_ATTRIBUTE );
 
         final String usernameAttribute = newUserProfile.getLdapProfile( pwmDomain.getConfig() ).readSettingAsString( PwmSetting.LDAP_USERNAME_ATTRIBUTE );
 
+        final String username = formValues.getOrDefault( usernameAttribute, "_NewUser_" );
+
+        final UserIdentity userIdentity = UserIdentity.create(
+                username,
+                newUserProfile.getLdapProfile( pwmDomain.getConfig() ).getId(),
+                pwmDomain.getDomainID() );
+
         return UserInfoBean.builder()
-            .userEmailAddress( formValues.get( emailAddressAttribute ) )
-            .username( formValues.get( usernameAttribute ) )
-            .attributes( formValues )
-            .build();
+                .userIdentity( userIdentity )
+                .userEmailAddress( formValues.get( emailAddressAttribute ) )
+                .username( formValues.get( usernameAttribute ) )
+                .attributes( formValues )
+                .build();
     }
 
     static MacroRequest createMacroMachineForNewUser(
@@ -544,7 +541,7 @@ class NewUserUtils
             final boolean visible = newUserProfile.readSettingAsBoolean( PwmSetting.NEWUSER_PROFILE_DISPLAY_VISIBLE );
             if ( visible )
             {
-                returnMap.put( newUserProfile.getIdentifier(), newUserProfile.getDisplayName( pwmRequest.getLocale() ) );
+                returnMap.put( newUserProfile.getId().stringValue(), newUserProfile.getDisplayName( pwmRequest.getLocale() ) );
             }
         }
         return Collections.unmodifiableMap( returnMap );
@@ -779,7 +776,7 @@ class NewUserUtils
                     TokenUtil.initializeAndSendToken(
                             pwmRequest.getPwmRequestContext(),
                             TokenUtil.TokenInitAndSendRequest.builder()
-                                    .userInfo(  null )
+                                    .userInfo(  macroRequest.getUserInfo() )
                                     .tokenDestinationItem( tokenDestinationItem )
                                     .emailToSend( PwmSetting.EMAIL_NEWUSER_VERIFICATION )
                                     .tokenType( TokenType.NEWUSER )
@@ -845,7 +842,7 @@ class NewUserUtils
                 return newUserProfile.getTokenDurationSMS( domainConfig );
 
             default:
-                JavaHelper.unhandledSwitchStatement( tokenDestinationItem );
+                PwmUtil.unhandledSwitchStatement( tokenDestinationItem );
         }
 
         return null;

@@ -35,9 +35,9 @@ import password.pwm.config.profile.PwmPasswordRule;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.svc.PwmService;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
@@ -113,7 +113,7 @@ public class PasswordRuleChecks
     )
             throws PwmUnrecoverableException
     {
-        final boolean failFast = JavaHelper.enumArrayContainsValue( flags, PwmPasswordRuleValidator.Flag.FailFast );
+        final boolean failFast = EnumUtil.enumArrayContainsValue( flags, PwmPasswordRuleValidator.Flag.FailFast );
 
         // null check
         if ( password == null )
@@ -137,7 +137,7 @@ public class PasswordRuleChecks
                 .pwmDomain( pwmDomain )
                 .policy( policy )
                 .userInfo( userInfo )
-                .ruleHelper( policy.getRuleHelper() )
+                .ruleHelper( policy.ruleHelper() )
                 .macroRequest( macroRequest )
                 .charCounter( new PasswordCharCounter( password ) )
                 .build();
@@ -570,9 +570,9 @@ public class PasswordRuleChecks
             final PwmPasswordPolicy policy = ruleCheckData.getPolicy();
 
             // check disallowed attributes.
-            if ( !policy.getRuleHelper().getDisallowedAttributes().isEmpty() )
+            if ( !policy.ruleHelper().getDisallowedAttributes().isEmpty() )
             {
-                final List<String> paramConfigs = policy.getRuleHelper().getDisallowedAttributes( PasswordRuleReaderHelper.Flag.KeepThresholds );
+                final List<String> paramConfigs = policy.ruleHelper().getDisallowedAttributes( PasswordRuleReaderHelper.Flag.KeepThresholds );
                 if ( userInfo != null )
                 {
                     final Map<String, String> userValues = userInfo.getCachedPasswordRuleAttributes();
@@ -652,7 +652,7 @@ public class PasswordRuleChecks
                     errorList.add( new ErrorInformation( PwmError.PASSWORD_INVALID_CHAR ) );
                     if ( EXTRA_LOGGING )
                     {
-                        LOGGER.trace( () -> "password rejected, does not match configured regex pattern: " + pattern.toString() );
+                        LOGGER.trace( () -> "password rejected, does not match configured regex pattern: " + pattern );
                     }
                 }
             }
@@ -665,7 +665,7 @@ public class PasswordRuleChecks
                     errorList.add( new ErrorInformation( PwmError.PASSWORD_INVALID_CHAR ) );
                     if ( EXTRA_LOGGING )
                     {
-                        LOGGER.trace( () -> "password rejected, matches configured no-regex pattern: " + pattern.toString() );
+                        LOGGER.trace( () -> "password rejected, matches configured no-regex pattern: " + pattern );
                     }
                 }
             }

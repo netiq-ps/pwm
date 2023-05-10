@@ -20,7 +20,6 @@
 
 package password.pwm.http;
 
-import com.novell.ldapchai.util.StringHelper;
 import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
 import password.pwm.bean.DomainID;
@@ -28,6 +27,7 @@ import password.pwm.bean.LocalSessionStateBean;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.svc.stats.EpsStatistic;
 import password.pwm.svc.stats.StatisticsClient;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 
@@ -40,6 +40,7 @@ import javax.servlet.http.HttpSessionActivationListener;
 import javax.servlet.http.HttpSessionEvent;
 import javax.servlet.http.HttpSessionListener;
 import java.time.Instant;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -68,7 +69,7 @@ public class HttpEventManager implements
         final HttpSession httpSession = httpSessionEvent.getSession();
         try
         {
-            final ContextManager contextManager = ContextManager.getContextManager( httpSession );
+            final ContextManager contextManager = ContextManager.getContextManager( httpSession.getServletContext() );
             final PwmApplication pwmApplication = contextManager.getPwmApplication();
             httpSession.setAttribute( PwmConstants.SESSION_ATTR_PWM_APP_NONCE, pwmApplication.getRuntimeNonce() );
 
@@ -95,14 +96,14 @@ public class HttpEventManager implements
                 if ( httpSession.getAttribute( PwmConstants.SESSION_ATTR_PWM_SESSION ) != null )
                 {
                     final String debugMsg = "destroyed session" + ": " + makeSessionDestroyedDebugMsg( pwmSession );
-                    pwmSession.unauthenticateUser( null );
+                    pwmSession.unAuthenticateUser( null );
 
                     final PwmApplication pwmApplication = ContextManager.getPwmApplication( httpSession.getServletContext() );
                     if ( pwmApplication != null )
                     {
                         pwmApplication.getSessionTrackService().removeSessionData( pwmSession );
                     }
-                    LOGGER.trace( pwmSession.getLabel(), () -> debugMsg );
+                    LOGGER.trace( () -> debugMsg );
                 }
                 else
                 {
@@ -114,6 +115,8 @@ public class HttpEventManager implements
                 LOGGER.warn( () -> "error during httpSessionDestroyed: " + e.getMessage() );
             }
         }
+
+        clearSessionAttributes( httpSession );
     }
 
 
@@ -143,7 +146,6 @@ public class HttpEventManager implements
             LOGGER.fatal( () -> "error initializing context: " + e, e );
             System.err.println( "error initializing context: " + e );
             System.out.println( "error initializing context: " + e );
-            e.printStackTrace();
         }
     }
 
@@ -165,11 +167,13 @@ public class HttpEventManager implements
     @Override
     public void sessionWillPassivate( final HttpSessionEvent event )
     {
+        clearSessionAttributes( event.getSession() );
     }
 
     @Override
     public void sessionDidActivate( final HttpSessionEvent event )
     {
+        clearSessionAttributes( event.getSession() );
     }
 
     private static String makeSessionDestroyedDebugMsg( final PwmSession pwmSession )
@@ -184,9 +188,9 @@ public class HttpEventManager implements
             final TimeDuration timeDuration = TimeDuration.between( startTime, lastAccessedTime );
             debugItems.put( "firstToLastRequestInterval", timeDuration.asCompactString() );
         }
-        final TimeDuration avgReqDuration =  sessionStateBean.getAvgRequestDuration().getAverageAsDuration();
+        final TimeDuration avgReqDuration =  TimeDuration.fromDuration( sessionStateBean.getAvgRequestDuration().getAverageAsDuration() );
         debugItems.put( "avgRequestDuration", avgReqDuration.asCompactString() );
-        return StringHelper.stringMapToString( debugItems, "," );
+        return StringUtil.mapToString( debugItems );
     }
 
     @Override
@@ -199,6 +203,20 @@ public class HttpEventManager implements
     public void requestInitialized( final ServletRequestEvent sre )
     {
         ServletRequestListener.super.requestInitialized( sre );
+    }
+
+    private static void clearSessionAttributes( final HttpSession httpSession )
+    {
+        if ( httpSession == null )
+        {
+            return;
+        }
+
+        for ( final Enumeration<String> stringEnumeration = httpSession.getAttributeNames(); stringEnumeration.hasMoreElements(); )
+        {
+            final String attributeName = stringEnumeration.nextElement();
+            httpSession.removeAttribute( attributeName );
+        }
     }
 }
 

@@ -20,19 +20,18 @@
 
 package password.pwm.util.cli.commands;
 
-import org.apache.commons.io.IOUtils;
 import password.pwm.PwmConstants;
 import password.pwm.config.AppConfig;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.option.TLSVersion;
 import password.pwm.util.cli.CliParameters;
+import password.pwm.util.java.JavaHelper;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -41,14 +40,17 @@ import java.util.Set;
 public class ExportHttpsTomcatConfigCommand extends AbstractCliCommand
 {
 
+    public static final String PARAM_NAME_SOURCE_FILE = "sourceFile";
+
     @Override
-    void doCommand( ) throws Exception
+    void doCommand( )
+            throws IOException
     {
-        final File sourceFile = ( File ) cliEnvironment.getOptions().get( "sourceFile" );
-        final File outputFile = ( File ) cliEnvironment.getOptions().get( "outputFile" );
+        final Path sourceFile = ( Path ) cliEnvironment.getOptions().get( PARAM_NAME_SOURCE_FILE );
+        final Path outputFile = ( Path ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_NEW_OUTPUT_FILE.getName() );
         try (
-                FileInputStream fileInputStream = new FileInputStream( sourceFile );
-                FileOutputStream fileOutputStream = new FileOutputStream( outputFile )
+                InputStream fileInputStream = Files.newInputStream( sourceFile );
+                OutputStream fileOutputStream = Files.newOutputStream( outputFile )
         )
         {
             TomcatConfigWriter.writeOutputFile(
@@ -61,7 +63,7 @@ public class ExportHttpsTomcatConfigCommand extends AbstractCliCommand
         {
             out( "error during tomcat config file export: " + e.getMessage() );
         }
-        out( "successfully exported tomcat https settings to " + outputFile.getAbsolutePath() );
+        out( "successfully exported tomcat https settings to " + outputFile );
     }
 
     @Override
@@ -88,7 +90,7 @@ public class ExportHttpsTomcatConfigCommand extends AbstractCliCommand
             @Override
             public String getName( )
             {
-                return "sourceFile";
+                return PARAM_NAME_SOURCE_FILE;
             }
 
         };
@@ -119,7 +121,7 @@ public class ExportHttpsTomcatConfigCommand extends AbstractCliCommand
         )
                 throws IOException
         {
-            String fileContents = IOUtils.toString( sourceFile, PwmConstants.DEFAULT_CHARSET.toString() );
+            String fileContents = JavaHelper.copyToString( sourceFile, PwmConstants.DEFAULT_CHARSET, Integer.MAX_VALUE ).orElse( "" );
             fileContents = fileContents.replace( TOKEN_TLS_PROTOCOLS, getTlsProtocolsValue( appConfig ) );
             final String tlsCiphers = appConfig.readSettingAsString( PwmSetting.HTTPS_CIPHERS );
             fileContents = fileContents.replace( TOKEN_TLS_CIPHERS, tlsCiphers );
@@ -133,7 +135,7 @@ public class ExportHttpsTomcatConfigCommand extends AbstractCliCommand
             for ( final Iterator<TLSVersion> versionIterator = tlsVersions.iterator(); versionIterator.hasNext(); )
             {
                 final TLSVersion tlsVersion = versionIterator.next();
-                output.append( "+" ).append( tlsVersion.getTomcatValueName() );
+                output.append( '+' ).append( tlsVersion.getTomcatValueName() );
                 if ( versionIterator.hasNext() )
                 {
                     output.append( ", " );

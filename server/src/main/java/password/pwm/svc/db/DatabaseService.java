@@ -35,11 +35,12 @@ import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
 import password.pwm.svc.stats.EpsStatistic;
 import password.pwm.svc.stats.StatisticsClient;
-import password.pwm.util.PwmScheduler;
 import password.pwm.util.java.AtomicLoopIntIncrementer;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmTimeUtil;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 
 import java.sql.Connection;
@@ -56,7 +57,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 
 
 public class DatabaseService extends AbstractPwmService implements PwmService
@@ -77,8 +77,6 @@ public class DatabaseService extends AbstractPwmService implements PwmService
 
     private AtomicLoopIntIncrementer slotIncrementer;
     private final Map<Integer, DatabaseAccessorImpl> accessors = new ConcurrentHashMap<>();
-
-    private ExecutorService executorService;
 
     private final Map<DatabaseAboutProperty, String> debugInfo = new LinkedHashMap<>();
 
@@ -104,17 +102,36 @@ public class DatabaseService extends AbstractPwmService implements PwmService
     {
         this.dbConfiguration = DBConfiguration.fromConfiguration( getPwmApplication().getConfig() );
 
-
-
-        executorService = PwmScheduler.makeBackgroundExecutor( pwmApplication, this.getClass() );
-
         final TimeDuration watchdogFrequency = TimeDuration.of(
                 Integer.parseInt( pwmApplication.getConfig().readAppProperty( AppProperty.DB_CONNECTIONS_WATCHDOG_FREQUENCY_SECONDS ) ),
                 TimeDuration.Unit.SECONDS );
 
-        pwmApplication.getPwmScheduler().scheduleFixedRateJob( new ConnectionMonitor(), executorService, watchdogFrequency, watchdogFrequency );
+        if ( !dbShouldOpen() )
+        {
+            initialized = true;
+            return STATUS.CLOSED;
+        }
+
+        scheduleFixedRateJob( new ConnectionMonitor(), watchdogFrequency, watchdogFrequency );
 
         return dbInit();
+    }
+
+    private boolean dbShouldOpen()
+    {
+        if ( getPwmApplication().getPwmEnvironment().isInternalRuntimeInstance() )
+        {
+            return false;
+        }
+
+        if ( !getPwmApplication().getConfig().hasDbConfigured() )
+        {
+            setStatus( STATUS.CLOSED );
+            LOGGER.debug( getSessionLabel(), () -> "skipping database connection open, connection parameters are not configured" );
+            return false;
+        }
+
+        return true;
     }
 
     private STATUS dbInit( )
@@ -124,19 +141,11 @@ public class DatabaseService extends AbstractPwmService implements PwmService
             return STATUS.OPEN;
         }
 
-        if ( !dbConfiguration.isEnabled() )
-        {
-            setStatus( STATUS.CLOSED );
-            LOGGER.debug( () -> "skipping database connection open, no connection parameters configured" );
-            initialized = true;
-            return STATUS.CLOSED;
-        }
-
         final Instant startTime = Instant.now();
 
         try
         {
-            LOGGER.debug( () -> "opening connection to database " + this.dbConfiguration.getConnectionString() );
+            LOGGER.debug( getSessionLabel(), () -> "opening connection to database " + this.dbConfiguration.getConnectionString() );
             slotIncrementer = AtomicLoopIntIncrementer.builder().ceiling( dbConfiguration.getMaxConnections() ).build();
 
             {
@@ -145,7 +154,8 @@ public class DatabaseService extends AbstractPwmService implements PwmService
 
                 final Connection connection = openConnection( dbConfiguration );
                 updateDebugProperties( connection );
-                LOGGER.debug( () -> "established initial connection to " + dbConfiguration.getConnectionString() + ", properties: " + JsonUtil.serializeMap( this.debugInfo ) );
+                LOGGER.debug( getSessionLabel(), () -> "established initial connection to " + dbConfiguration.getConnectionString() + ", properties: "
+                        + JsonFactory.get().serializeMap( this.debugInfo ) );
 
                 for ( final DatabaseTable table : DatabaseTable.values() )
                 {
@@ -167,13 +177,13 @@ public class DatabaseService extends AbstractPwmService implements PwmService
                 }
             }
 
-            LOGGER.debug( () -> "successfully connected to remote database (" + TimeDuration.compactFromCurrent( startTime ) + ")" );
+            LOGGER.debug( getSessionLabel(), () -> "successfully connected to remote database (" + TimeDuration.compactFromCurrent( startTime ) + ")" );
 
         }
         catch ( final Throwable t )
         {
             final String errorMsg = "exception initializing database service: " + t.getMessage();
-            LOGGER.warn( () -> errorMsg );
+            LOGGER.warn( getSessionLabel(), () -> errorMsg );
             initialized = false;
             lastError = new ErrorInformation( PwmError.ERROR_DB_UNAVAILABLE, errorMsg );
             return STATUS.CLOSED;
@@ -184,14 +194,9 @@ public class DatabaseService extends AbstractPwmService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         setStatus( STATUS.CLOSED );
-
-        if ( executorService != null )
-        {
-            executorService.shutdown();
-        }
 
         clearCurrentAccessors();
 
@@ -201,7 +206,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
         }
         catch ( final Exception e )
         {
-            LOGGER.debug( () -> "error while de-registering driver: " + e.getMessage() );
+            LOGGER.debug( getSessionLabel(), () -> "error while de-registering driver: " + e.getMessage() );
         }
 
         if ( jdbcDriverLoader != null )
@@ -243,9 +248,9 @@ public class DatabaseService extends AbstractPwmService implements PwmService
         try
         {
             final Map<String, String> tempMap = new HashMap<>();
-            tempMap.put( "date", JavaHelper.toIsoDate( Instant.now() ) );
+            tempMap.put( "date", StringUtil.toIsoDate( Instant.now() ) );
             final DatabaseAccessor accessor = getAccessor();
-            accessor.put( DatabaseTable.PWM_META, KEY_TEST, JsonUtil.serializeMap( tempMap ) );
+            accessor.put( DatabaseTable.PWM_META, KEY_TEST, JsonFactory.get().serializeMap( tempMap ) );
         }
         catch ( final PwmException e )
         {
@@ -264,8 +269,8 @@ public class DatabaseService extends AbstractPwmService implements PwmService
 
             if ( errorAge.isShorterThan( cautionDurationMS ) )
             {
-                final String ageString = errorAge.asLongString();
-                final String errorDate = JavaHelper.toIsoDate( lastError.getDate() );
+                final String ageString = PwmTimeUtil.asLongString( errorAge );
+                final String errorDate = StringUtil.toIsoDate( lastError.getDate() );
                 final String errorMsg = lastError.toDebugStr();
                 returnRecords.add( HealthRecord.forMessage(
                         DomainID.systemId(),
@@ -292,7 +297,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
     {
 
         final String errorMsg;
-        if ( dbConfiguration != null && !dbConfiguration.isEnabled() )
+        if ( dbConfiguration != null && !getPwmApplication().getConfig().hasDbConfigured() )
         {
             errorMsg = "database is not configured";
         }
@@ -314,7 +319,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
     @Override
     public ServiceInfoBean serviceInfo( )
     {
-        final Map<String, String> debugProperties = new LinkedHashMap<>();
+        final Map<String, String> debugProperties = new LinkedHashMap<>( debugInfo.size() );
         for ( final Map.Entry<DatabaseAboutProperty, String> entry : debugInfo.entrySet() )
         {
             final DatabaseAboutProperty databaseAboutProperty = entry.getKey();
@@ -359,7 +364,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
 
         try
         {
-            LOGGER.debug( () -> "initiating connecting to database " + connectionURL );
+            LOGGER.debug( getSessionLabel(), () -> "initiating connecting to database " + connectionURL );
             final Properties connectionProperties = new Properties();
             if ( dbConfiguration.getUsername() != null && !dbConfiguration.getUsername().isEmpty() )
             {
@@ -371,7 +376,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
             }
 
             final Connection connection = driver.connect( connectionURL, connectionProperties );
-            LOGGER.debug( () -> "connected to database " + connectionURL );
+            LOGGER.debug( getSessionLabel(), () -> "connected to database " + connectionURL );
 
             connection.setAutoCommit( false );
             return connection;
@@ -380,7 +385,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
         {
             final String errorMsg = "error connecting to database: " + JavaHelper.readHostileExceptionMessage( e );
             final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_DB_UNAVAILABLE, errorMsg );
-            LOGGER.error( errorInformation );
+            LOGGER.error( getSessionLabel(),  errorInformation );
             throw new DatabaseException( errorInformation );
         }
     }
@@ -426,7 +431,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
             }
             catch ( final SQLException e )
             {
-                LOGGER.error( () -> "error reading jdbc meta data: " + e.getMessage() );
+                LOGGER.error( getSessionLabel(), () -> "error reading jdbc meta data: " + e.getMessage() );
             }
         }
     }
@@ -454,7 +459,7 @@ public class DatabaseService extends AbstractPwmService implements PwmService
                 }
                 if ( !valid )
                 {
-                    LOGGER.warn( () -> "database connection lost; will retry connect periodically" );
+                    LOGGER.warn( getSessionLabel(), () -> "database connection lost; will retry connect periodically" );
                     initialized = false;
                 }
 

@@ -20,6 +20,7 @@
 
 package password.pwm.svc.event;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.commons.csv.CSVPrinter;
 import password.pwm.AppProperty;
 import password.pwm.PwmApplication;
@@ -44,8 +45,8 @@ import password.pwm.svc.PwmService;
 import password.pwm.svc.stats.Statistic;
 import password.pwm.svc.stats.StatisticsClient;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.java.PwmUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StatisticCounterBundle;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.localdb.LocalDB;
@@ -72,7 +73,7 @@ public class AuditService extends AbstractPwmService implements PwmService
     private SyslogAuditService syslogManager;
     private ErrorInformation lastError;
     private AuditVault auditVault;
-    private final StatisticCounterBundle<DebugKey> statisticCounterBundle = new StatisticCounterBundle( DebugKey.class );
+    private final StatisticCounterBundle<DebugKey> statisticCounterBundle = new StatisticCounterBundle<>( DebugKey.class );
 
     enum DebugKey
     {
@@ -92,13 +93,13 @@ public class AuditService extends AbstractPwmService implements PwmService
 
         if ( pwmApplication.getApplicationMode() == null || pwmApplication.getApplicationMode() == PwmApplicationMode.READ_ONLY )
         {
-            LOGGER.warn( () -> "unable to start - Application is in read-only mode" );
+            LOGGER.warn( getSessionLabel(), () -> "unable to start - Application is in read-only mode" );
             return STATUS.CLOSED;
         }
 
         if ( pwmApplication.getLocalDB() == null || pwmApplication.getLocalDB().status() != LocalDB.Status.OPEN )
         {
-            LOGGER.warn( () -> "unable to start - LocalDB is not available" );
+            LOGGER.warn( getSessionLabel(), () -> "unable to start - LocalDB is not available" );
             return STATUS.CLOSED;
         }
 
@@ -107,7 +108,7 @@ public class AuditService extends AbstractPwmService implements PwmService
         {
             try
             {
-                syslogManager = new SyslogAuditService( pwmApplication );
+                syslogManager = new SyslogAuditService( pwmApplication, getSessionLabel() );
             }
             catch ( final Exception e )
             {
@@ -117,13 +118,13 @@ public class AuditService extends AbstractPwmService implements PwmService
         }
 
         auditVault = new LocalDbAuditVault();
-        auditVault.init( pwmApplication, pwmApplication.getLocalDB(), settings );
+        auditVault.init( pwmApplication, getSessionLabel(), pwmApplication.getLocalDB(), settings );
 
         return STATUS.OPEN;
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         if ( syslogManager != null )
         {
@@ -181,7 +182,7 @@ public class AuditService extends AbstractPwmService implements PwmService
                 break;
 
             default:
-                JavaHelper.unhandledSwitchStatement( record.getEventCode().getType() );
+                PwmUtil.unhandledSwitchStatement( record.getEventCode().getType() );
 
         }
     }
@@ -202,8 +203,8 @@ public class AuditService extends AbstractPwmService implements PwmService
 
         final String body;
         {
-            final String jsonRecord = JsonUtil.serialize( record );
-            final Map<String, Object> mapRecord = JsonUtil.deserializeMap( jsonRecord );
+            final String jsonRecord = JsonFactory.get().serialize( record );
+            final Map<String, Object> mapRecord = JsonFactory.get().deserializeMap( jsonRecord, String.class, Object.class );
             body = StringUtil.mapToString( mapRecord, "=", "\n" );
         }
 
@@ -238,7 +239,7 @@ public class AuditService extends AbstractPwmService implements PwmService
     public void submit( final SessionLabel sessionLabel, final AuditRecord auditRecord )
             throws PwmUnrecoverableException
     {
-        final String jsonRecord = JsonUtil.serialize( auditRecord );
+        final String jsonRecord = JsonFactory.get().serialize( auditRecord );
 
         if ( status() != STATUS.OPEN )
         {
@@ -293,7 +294,8 @@ public class AuditService extends AbstractPwmService implements PwmService
                     }
                     else
                     {
-                        LOGGER.trace( sessionLabel, () -> "skipping update of user history, audit record does not have a perpetratorDN: " + JsonUtil.serialize( auditRecord ) );
+                        LOGGER.trace( sessionLabel, () -> "skipping update of user history, audit record does not have a perpetratorDN: "
+                                + JsonFactory.get().serialize( auditRecord ) );
                     }
                 }
             }
@@ -318,15 +320,17 @@ public class AuditService extends AbstractPwmService implements PwmService
     }
 
 
+
+    @SuppressFBWarnings( "PSC_PRESIZE_COLLECTIONS" )
     public int outputVaultToCsv( final OutputStream outputStream, final Locale locale, final boolean includeHeader )
             throws IOException
     {
         final AppConfig config = getPwmApplication().getConfig();
 
-        final CSVPrinter csvPrinter = JavaHelper.makeCsvPrinter( outputStream );
+        final CSVPrinter csvPrinter = PwmUtil.makeCsvPrinter( outputStream );
 
         csvPrinter.printComment( " " + PwmConstants.PWM_APP_NAME + " audit record output " );
-        csvPrinter.printComment( " " + JavaHelper.toIsoDate( Instant.now() ) );
+        csvPrinter.printComment( " " + StringUtil.toIsoDate( Instant.now() ) );
 
         if ( includeHeader )
         {
@@ -356,12 +360,12 @@ public class AuditService extends AbstractPwmService implements PwmService
             final List<String> lineOutput = new ArrayList<>();
             lineOutput.add( loopRecord.getEventCode().getType().toString() );
             lineOutput.add( loopRecord.getEventCode().toString() );
-            lineOutput.add( JavaHelper.toIsoDate( loopRecord.getTimestamp() ) );
+            lineOutput.add( StringUtil.toIsoDate( loopRecord.getTimestamp() ) );
             lineOutput.add( loopRecord.getGuid() );
             lineOutput.add( loopRecord.getMessage() == null ? "" : loopRecord.getMessage() );
             if ( loopRecord instanceof SystemAuditRecord )
             {
-                lineOutput.add( ( ( SystemAuditRecord ) loopRecord ).getInstance() );
+                lineOutput.add( loopRecord.getInstance() );
             }
             if ( loopRecord instanceof UserAuditRecord )
             {
@@ -397,7 +401,7 @@ public class AuditService extends AbstractPwmService implements PwmService
     {
         return ServiceInfoBean.builder()
                 .storageMethod( DataStorageMethod.LOCALDB )
-                .debugProperties( statisticCounterBundle.debugStats() )
+                .debugProperties( statisticCounterBundle.debugStats( PwmConstants.DEFAULT_LOCALE ) )
                 .build();
     }
 

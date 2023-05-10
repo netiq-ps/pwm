@@ -33,7 +33,7 @@ import password.pwm.config.profile.LdapProfile;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 
 import java.util.Collections;
@@ -78,7 +78,7 @@ class PwNotifyLdapStorageService implements PwNotifyStorageService
         if ( StringUtil.isEmpty( testUserDN ) )
         {
             final String msg = "LDAP storage type selected, but LDAP test user ("
-                    + PwmSetting.LDAP_TEST_USER_DN.toMenuLocationDebug( defaultLdapProfile.getIdentifier(), PwmConstants.DEFAULT_LOCALE )
+                    + PwmSetting.LDAP_TEST_USER_DN.toMenuLocationDebug( defaultLdapProfile.getId(), PwmConstants.DEFAULT_LOCALE )
                     + ") not defined.";
             throw new PwmUnrecoverableException( PwmError.ERROR_PWNOTIFY_SERVICE_ERROR, msg );
         }
@@ -88,7 +88,7 @@ class PwNotifyLdapStorageService implements PwNotifyStorageService
             if ( StringUtil.isEmpty( ldapProfile.readSettingAsString( PwmSetting.LDAP_ATTRIBUTE_PWNOTIFY ) ) )
             {
                 final String msg = "LDAP storage type selected, but setting '"
-                        + PwmSetting.LDAP_ATTRIBUTE_PWNOTIFY.toMenuLocationDebug( ldapProfile.getIdentifier(), PwmConstants.DEFAULT_LOCALE )
+                        + PwmSetting.LDAP_ATTRIBUTE_PWNOTIFY.toMenuLocationDebug( ldapProfile.getId(), PwmConstants.DEFAULT_LOCALE )
                         + " is not configured ";
                 throw new PwmUnrecoverableException( PwmError.ERROR_PWNOTIFY_SERVICE_ERROR, msg );
             }
@@ -107,7 +107,7 @@ class PwNotifyLdapStorageService implements PwNotifyStorageService
         final String payload = configObjectRecord.getPayload();
         if ( StringUtil.notEmpty( payload ) )
         {
-            return Optional.ofNullable( JsonUtil.deserialize( payload, PwNotifyUserStatus.class ) );
+            return Optional.ofNullable( JsonFactory.get().deserialize( payload, PwNotifyUserStatus.class ) );
         }
 
         return Optional.empty();
@@ -122,7 +122,7 @@ class PwNotifyLdapStorageService implements PwNotifyStorageService
             throws PwmUnrecoverableException
     {
         final ConfigObjectRecord configObjectRecord = getUserCOR( userIdentity, CoreType.User );
-        final String payload = JsonUtil.serialize( pwNotifyUserStatus );
+        final String payload = JsonFactory.get().serialize( pwNotifyUserStatus );
         try
         {
             configObjectRecord.updatePayload( payload );
@@ -153,7 +153,7 @@ class PwNotifyLdapStorageService implements PwNotifyStorageService
         {
             return new PwNotifyStoredJobState( null, null, null, null, false );
         }
-        return JsonUtil.deserialize( payload, PwNotifyStoredJobState.class );
+        return JsonFactory.get().deserialize( payload, PwNotifyStoredJobState.class );
     }
 
     @Override
@@ -164,7 +164,7 @@ class PwNotifyLdapStorageService implements PwNotifyStorageService
                 .orElseThrow();
 
         final ConfigObjectRecord configObjectRecord = getUserCOR( proxyUser, CoreType.ProxyUser );
-        final String payload = JsonUtil.serialize( pwNotifyStoredJobState );
+        final String payload = JsonFactory.get().serialize( pwNotifyStoredJobState );
 
         try
         {

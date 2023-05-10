@@ -31,7 +31,6 @@ import password.pwm.config.option.DataStorageMethod;
 import password.pwm.error.PwmException;
 import password.pwm.health.HealthRecord;
 
-import java.io.Serializable;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -49,11 +48,13 @@ public interface PwmService
         CLOSED,
     }
 
+    String name();
+
     STATUS status( );
 
     void init( PwmApplication pwmApplication, DomainID domainID ) throws PwmException;
 
-    void close( );
+    void shutdown( );
 
     List<HealthRecord> healthCheck( );
 
@@ -72,7 +73,7 @@ public interface PwmService
 
     @Value
     @Builder
-    class ServiceInfoBean implements ServiceInfo, Serializable
+    class ServiceInfoBean implements ServiceInfo
     {
         @Singular
         private final Set<DataStorageMethod> storageMethods;

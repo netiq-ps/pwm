@@ -24,10 +24,9 @@ import password.pwm.i18n.Config;
 import password.pwm.util.i18n.LocaleHelper;
 import password.pwm.util.macro.MacroRequest;
 
-import java.io.Serializable;
 import java.util.Locale;
 
-public class LDAPPermissionInfo implements Serializable
+public class LDAPPermissionInfo
 {
     private final Access access;
     private final Actor actor;
@@ -64,13 +63,13 @@ public class LDAPPermissionInfo implements Serializable
 
         public String getLabel( final Locale locale, final DomainConfig config )
         {
-            return LocaleHelper.getLocalizedMessage( locale, "Actor_Label_" + this.toString(), config, Config.class );
+            return LocaleHelper.getLocalizedMessage( locale, "Actor_Label_" + this, config, Config.class );
         }
 
         public String getDescription( final Locale locale, final DomainConfig config )
         {
             final MacroRequest macroRequest = MacroRequest.forStatic();
-            return macroRequest.expandMacros( LocaleHelper.getLocalizedMessage( locale, "Actor_Description_" + this.toString(), config, Config.class ) );
+            return macroRequest.expandMacros( LocaleHelper.getLocalizedMessage( locale, "Actor_Description_" + this, config, Config.class ) );
         }
     }
 }

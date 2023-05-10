@@ -23,13 +23,15 @@ package password.pwm.util.cli.commands;
 import password.pwm.PwmConstants;
 import password.pwm.util.cli.CliParameters;
 import password.pwm.util.localdb.LocalDB;
+import password.pwm.util.localdb.LocalDBException;
 import password.pwm.util.localdb.LocalDBStoredQueue;
 import password.pwm.util.logging.PwmLogEvent;
 
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Iterator;
 
@@ -38,7 +40,7 @@ public class ExportLogsCommand extends AbstractCliCommand
 
     @Override
     void doCommand( )
-            throws Exception
+            throws IOException, LocalDBException
     {
         final LocalDB localDB = this.cliEnvironment.getLocalDB();
         final LocalDBStoredQueue logQueue = LocalDBStoredQueue.createLocalDBStoredQueue( null, localDB,
@@ -50,10 +52,10 @@ public class ExportLogsCommand extends AbstractCliCommand
             return;
         }
 
-        final File outputFile = ( File ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_NEW_OUTPUT_FILE.getName() );
-        out( "outputting " + logQueue.size() + " log events to " + outputFile.getAbsolutePath() + "...." );
+        final Path outputFile = ( Path ) cliEnvironment.getOptions().get( CliParameters.REQUIRED_NEW_OUTPUT_FILE.getName() );
+        out( "outputting " + logQueue.size() + " log events to " + outputFile + "...." );
 
-        try ( Writer outputWriter = new OutputStreamWriter( new FileOutputStream( outputFile ), PwmConstants.DEFAULT_CHARSET ) )
+        try ( Writer outputWriter = new OutputStreamWriter( Files.newOutputStream( outputFile ), PwmConstants.DEFAULT_CHARSET ) )
         {
             for ( final Iterator<String> iter = logQueue.descendingIterator(); iter.hasNext(); )
             {

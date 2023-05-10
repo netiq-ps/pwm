@@ -35,16 +35,18 @@ import password.pwm.http.ContextManager;
 import password.pwm.http.bean.DisplayElement;
 import password.pwm.i18n.Admin;
 import password.pwm.i18n.Display;
-import password.pwm.ldap.LdapConnectionService;
+import password.pwm.ldap.LdapDomainService;
 import password.pwm.svc.PwmService;
 import password.pwm.svc.node.NodeInfo;
 import password.pwm.svc.node.NodeService;
 import password.pwm.svc.sessiontrack.SessionTrackService;
 import password.pwm.util.i18n.LocaleHelper;
 import password.pwm.util.java.CollectionUtil;
+import password.pwm.util.java.EnumUtil;
 import password.pwm.util.java.FileSystemUtility;
 import password.pwm.util.java.JavaHelper;
 import password.pwm.util.java.PwmNumberFormat;
+import password.pwm.util.java.PwmTimeUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.localdb.LocalDB;
@@ -52,7 +54,6 @@ import password.pwm.util.localdb.LocalDBException;
 import password.pwm.util.logging.LocalDBLogger;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.time.Instant;
@@ -71,13 +72,29 @@ import java.util.TreeMap;
 
 @Value
 @Builder
-public class AppDashboardData implements Serializable
+public class AppDashboardData
 {
-
     private static final PwmLogger LOGGER = PwmLogger.forClass( AppDashboardData.class );
 
+    private static final List<PwmAboutProperty> INTERESTED_ABOUT_PROPERTIES = Arrays.asList(
+            PwmAboutProperty.java_vmName,
+            PwmAboutProperty.java_vmVendor,
+            PwmAboutProperty.java_vmVersion,
+            PwmAboutProperty.java_runtimeVersion,
+            PwmAboutProperty.java_vmLocation,
+            PwmAboutProperty.java_appServerInfo,
+            PwmAboutProperty.java_osName,
+            PwmAboutProperty.java_osVersion,
+            PwmAboutProperty.java_osArch,
+            PwmAboutProperty.java_memoryFree,
+            PwmAboutProperty.java_memoryAllocated,
+            PwmAboutProperty.java_memoryMax,
+            PwmAboutProperty.java_threadCount
+    );
+
+
     @Value
-    public static class ServiceData implements Serializable, Comparable<ServiceData>
+    public static class ServiceData implements Comparable<ServiceData>
     {
         private static final Comparator<ServiceData> COMPARATOR = Comparator.comparing(
                 ServiceData::getDomainID,
@@ -105,7 +122,7 @@ public class AppDashboardData implements Serializable
     }
 
     @Value
-    public static class ThreadData implements Serializable
+    public static class ThreadData
     {
         private String id;
         private String name;
@@ -114,7 +131,7 @@ public class AppDashboardData implements Serializable
     }
 
     @Value
-    public static class NodeData implements Serializable
+    public static class NodeData
     {
         private String instanceID;
         private String uptime;
@@ -159,7 +176,7 @@ public class AppDashboardData implements Serializable
         builder.localDbInfo( makeLocalDbInfo( pwmDomain, locale ) );
         builder.javaAbout( makeAboutJavaData( pwmDomain, locale ) );
 
-        if ( JavaHelper.enumArrayContainsValue( flags, Flag.IncludeLocalDbTableSizes ) )
+        if ( EnumUtil.enumArrayContainsValue( flags, Flag.IncludeLocalDbTableSizes ) )
         {
             builder.localDbSizes( makeLocalDbTableSizes( pwmDomain, locale ) );
         }
@@ -168,7 +185,7 @@ public class AppDashboardData implements Serializable
             builder.localDbSizes( Collections.emptyMap() );
         }
 
-        if ( JavaHelper.enumArrayContainsValue( flags, Flag.ShowThreadData ) )
+        if ( EnumUtil.enumArrayContainsValue( flags, Flag.ShowThreadData ) )
         {
             builder.threads( makeThreadInfo() );
         }
@@ -189,11 +206,11 @@ public class AppDashboardData implements Serializable
             }
         }
 
-        builder.ldapConnectionCount( LdapConnectionService.totalLdapConnectionCount( pwmDomain.getPwmApplication() ) );
+        builder.ldapConnectionCount( LdapDomainService.totalLdapConnectionCount( pwmDomain.getPwmApplication() ) );
         builder.sessionCount( pwmDomain.getSessionTrackService().sessionCount() );
-        builder.requestsInProgress( pwmDomain.getPwmApplication().getActiveServletRequests().get() );
+        builder.requestsInProgress( pwmDomain.getPwmApplication().getTotalActiveServletRequests() );
 
-        LOGGER.trace( () -> "AppDashboardData bean created", () -> TimeDuration.fromCurrent( startTime ) );
+        LOGGER.trace( pwmDomain.getSessionLabel(), () -> "AppDashboardData bean created", TimeDuration.fromCurrent( startTime ) );
         return builder.build();
     }
 
@@ -221,22 +238,22 @@ public class AppDashboardData implements Serializable
                 "currentTime",
                 DisplayElement.Type.timestamp,
                 l.forKey( "Field_CurrentTime" ),
-                JavaHelper.toIsoDate( Instant.now() )
+                StringUtil.toIsoDate( Instant.now() )
         ), new DisplayElement(
                 "startupTime",
                 DisplayElement.Type.timestamp,
                 l.forKey( "Field_StartTime" ),
-                JavaHelper.toIsoDate( pwmDomain.getPwmApplication().getStartupTime() )
+                StringUtil.toIsoDate( pwmDomain.getPwmApplication().getStartupTime() )
         ), new DisplayElement(
                 "runningDuration",
                 DisplayElement.Type.string,
                 l.forKey( "Field_UpTime" ),
-                TimeDuration.fromCurrent( pwmDomain.getPwmApplication().getStartupTime() ).asLongString( locale )
+                PwmTimeUtil.asLongString( TimeDuration.fromCurrent( pwmDomain.getPwmApplication().getStartupTime() ), locale )
         ), new DisplayElement(
                 "installTime",
                 DisplayElement.Type.timestamp,
                 l.forKey( "Field_InstallTime" ),
-                JavaHelper.toIsoDate( pwmDomain.getPwmApplication().getInstallTime() )
+                StringUtil.toIsoDate( pwmDomain.getPwmApplication().getInstallTime() )
         ), new DisplayElement(
                 "siteURL",
                 DisplayElement.Type.string,
@@ -287,7 +304,7 @@ public class AppDashboardData implements Serializable
                 returnData.add( new ServiceData(
                         guid,
                         domainID,
-                        pwmService.getClass().getSimpleName(),
+                        pwmService.name(),
                         pwmService.status(),
                         storageMethods,
                         pwmService.healthCheck(),
@@ -312,13 +329,6 @@ public class AppDashboardData implements Serializable
                 DisplayElement.Type.number,
                 "Word List Dictionary Size",
                 numberFormat.format( pwmDomain.getPwmApplication().getWordlistService().size() )
-        ) );
-
-        localDbInfo.add( new DisplayElement(
-                "seedlistSize",
-                DisplayElement.Type.number,
-                "Seed List Dictionary Size",
-                numberFormat.format( pwmDomain.getPwmApplication().getSeedlistManager().size() )
         ) );
 
         localDbInfo.add( new DisplayElement(
@@ -366,7 +376,7 @@ public class AppDashboardData implements Serializable
         {
             final Optional<Instant> eldestAuditRecord = pwmDomain.getAuditService().eldestVaultRecord();
             final String display = eldestAuditRecord.isPresent()
-                    ? TimeDuration.fromCurrent( eldestAuditRecord.get() ).asLongString()
+                    ? PwmTimeUtil.asLongString( TimeDuration.fromCurrent( eldestAuditRecord.get() ) )
                     : notApplicable;
             localDbInfo.add( new DisplayElement(
                     "oldestLocalAuditRecords",
@@ -385,7 +395,7 @@ public class AppDashboardData implements Serializable
             final LocalDBLogger localDBLogger = pwmDomain.getPwmApplication().getLocalDBLogger();
             final String display = localDBLogger != null
                     && localDBLogger.getTailDate().isPresent()
-                    ? TimeDuration.fromCurrent( localDBLogger.getTailDate().get() ).asLongString()
+                    ? PwmTimeUtil.asLongString( TimeDuration.fromCurrent( localDBLogger.getTailDate().get() ) )
                     : notApplicable;
             localDbInfo.add( new DisplayElement(
                     "oldestLogEvents",
@@ -413,7 +423,9 @@ public class AppDashboardData implements Serializable
                     ? notApplicable
                     : pwmDomain.getPwmApplication().getLocalDB().getFileLocation() == null
                             ? notApplicable
-                            : StringUtil.formatDiskSize( FileSystemUtility.diskSpaceRemaining( pwmDomain.getPwmApplication().getLocalDB().getFileLocation() ) );
+                            : StringUtil.formatDiskSize( FileSystemUtility.diskSpaceRemaining(
+                                    pwmDomain.getPwmApplication().getLocalDB().getFileLocation() ) );
+
             localDbInfo.add( new DisplayElement(
                     "localDbFreeSpace",
                     DisplayElement.Type.string,
@@ -454,27 +466,11 @@ public class AppDashboardData implements Serializable
     )
     {
         final Map<PwmAboutProperty, String> aboutMap = PwmAboutProperty.makeInfoBean( pwmDomain.getPwmApplication() );
-        final List<DisplayElement> javaInfo = new ArrayList<>();
+        final List<DisplayElement> javaInfo = new ArrayList<>( INTERESTED_ABOUT_PROPERTIES.size() );
         final String notApplicable = Display.getLocalizedMessage( locale, Display.Value_NotApplicable, pwmDomain.getConfig() );
 
         {
-            final List<PwmAboutProperty> interestedProperties = Arrays.asList(
-                    PwmAboutProperty.java_vmName,
-                    PwmAboutProperty.java_vmVendor,
-                    PwmAboutProperty.java_vmVersion,
-                    PwmAboutProperty.java_runtimeVersion,
-                    PwmAboutProperty.java_vmLocation,
-                    PwmAboutProperty.java_appServerInfo,
-                    PwmAboutProperty.java_osName,
-                    PwmAboutProperty.java_osVersion,
-                    PwmAboutProperty.java_osArch,
-                    PwmAboutProperty.java_memoryFree,
-                    PwmAboutProperty.java_memoryAllocated,
-                    PwmAboutProperty.java_memoryMax,
-                    PwmAboutProperty.java_threadCount
-            );
-
-            for ( final PwmAboutProperty property : interestedProperties )
+            for ( final PwmAboutProperty property : INTERESTED_ABOUT_PROPERTIES )
             {
                 javaInfo.add( new DisplayElement(
                         property.name(),
@@ -564,12 +560,12 @@ public class AppDashboardData implements Serializable
 
                 final String uptime = nodeInfo.getStartupTime() == null
                         ? notApplicable
-                        : TimeDuration.fromCurrent( nodeInfo.getStartupTime() ).asLongString( locale );
+                        : PwmTimeUtil.asLongString( TimeDuration.fromCurrent( nodeInfo.getStartupTime() ), locale );
 
                 nodeData.add( new NodeData(
                         nodeInfo.getInstanceID(),
                         uptime,
-                        JavaHelper.toIsoDate( nodeInfo.getLastSeen() ),
+                        StringUtil.toIsoDate( nodeInfo.getLastSeen() ),
                         nodeInfo.getNodeState(),
                         nodeInfo.isConfigMatch()
                 ) );

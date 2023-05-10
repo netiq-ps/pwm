@@ -25,17 +25,18 @@ import password.pwm.PwmApplication;
 import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
 import password.pwm.bean.DomainID;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.SessionLabel;
 import password.pwm.bean.UserIdentity;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.http.PwmRequest;
 import password.pwm.http.PwmSession;
 import password.pwm.i18n.PwmDisplayBundle;
-import password.pwm.ldap.UserInfo;
+import password.pwm.user.UserInfo;
 import password.pwm.ldap.UserInfoFactory;
 import password.pwm.svc.userhistory.LdapXmlUserHistory;
 import password.pwm.util.i18n.LocaleHelper;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
 import password.pwm.util.secure.PwmRandom;
@@ -79,7 +80,7 @@ public class AuditRecordFactory
                 pwmRequest.getLabel(),
                 pwmRequest.getDomainID(),
                 pwmRequest.getPwmApplication(),
-                pwmRequest.getPwmSession().getSessionManager().getMacroMachine( ) );
+                pwmRequest.getMacroMachine() );
     }
 
     public static AuditRecordFactory make( final SessionLabel sessionLabel, final PwmDomain pwmDomain, final MacroRequest macroRequest )
@@ -273,7 +274,7 @@ public class AuditRecordFactory
             outputString = macroRequest.expandMacros( outputString );
         }
 
-        final Map<String, String> recordFields = JsonUtil.deserializeStringMap( JsonUtil.serialize( auditRecord ) );
+        final Map<String, String> recordFields = JsonFactory.get().deserializeStringMap( JsonFactory.get().serialize( auditRecord ) );
         for ( final Map.Entry<String, String> entry : recordFields.entrySet() )
         {
             final String key = entry.getKey();
@@ -289,7 +290,7 @@ public class AuditRecordFactory
     {
         String userDN = null;
         String userID = null;
-        String ldapProfile = null;
+        ProfileID ldapProfile = null;
 
         if ( userIdentity != null )
         {
@@ -306,7 +307,7 @@ public class AuditRecordFactory
             }
             catch ( final Exception e )
             {
-                LOGGER.warn( () -> "unable to read userID for " + userIdentity + ", error: " + e.getMessage() );
+                LOGGER.warn( sessionLabel, () -> "unable to read userID for " + userIdentity + ", error: " + e.getMessage() );
             }
         }
 
@@ -318,7 +319,7 @@ public class AuditRecordFactory
     {
         private final String userID;
         private final String userDN;
-        private final String ldapProfile;
+        private final ProfileID ldapProfile;
     }
 }
 

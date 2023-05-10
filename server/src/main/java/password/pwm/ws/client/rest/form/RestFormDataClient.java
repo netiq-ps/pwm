@@ -38,7 +38,7 @@ import password.pwm.svc.httpclient.PwmHttpClientRequest;
 import password.pwm.svc.httpclient.PwmHttpClientResponse;
 import password.pwm.util.BasicAuthInfo;
 import password.pwm.util.PasswordData;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.logging.PwmLogger;
 
@@ -50,7 +50,6 @@ import java.util.Map;
 
 public class RestFormDataClient
 {
-
     private static final PwmLogger LOGGER = PwmLogger.forClass( RestFormDataClient.class );
 
     private final PwmDomain pwmDomain;
@@ -102,7 +101,7 @@ public class RestFormDataClient
             httpHeaders.putAll( configuredHeaders );
         }
 
-        final String jsonRequestBody = JsonUtil.serialize( formDataRequestBean );
+        final String jsonRequestBody = JsonFactory.get().serialize( formDataRequestBean );
 
         final PwmHttpClientRequest pwmHttpClientRequest = PwmHttpClientRequest.builder()
                 .method( HttpMethod.POST )
@@ -114,17 +113,18 @@ public class RestFormDataClient
         final PwmHttpClientResponse httpResponse;
         try
         {
-            httpResponse = getHttpClient( pwmDomain.getConfig() ).makeRequest( pwmHttpClientRequest, sessionLabel );
+            httpResponse = getHttpClient( pwmDomain.getConfig() ).makeRequest( pwmHttpClientRequest );
             final String responseBody = httpResponse.getBody();
             LOGGER.trace( () -> "external rest call returned: " + httpResponse.getStatusPhrase() + ", body: " + responseBody );
             if ( httpResponse.getStatusCode() != 200 )
             {
-                final String errorMsg = "received non-200 response code (" + httpResponse.getStatusCode() + ") when executing web-service";
+                final String errorMsg = "received non-200 response code (" + httpResponse.getStatusCode()
+                        + ") when executing form data client web-service call to "
+                        + remoteWebServiceConfiguration.getUrl();
                 LOGGER.error( () -> errorMsg );
                 throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_SERVICE_UNREACHABLE, errorMsg ) );
             }
-            final FormDataResponseBean formDataResponseBean = JsonUtil.deserialize( responseBody, FormDataResponseBean.class );
-            return formDataResponseBean;
+            return JsonFactory.get().deserialize( responseBody, FormDataResponseBean.class );
         }
         catch ( final PwmUnrecoverableException e )
         {
@@ -135,7 +135,9 @@ public class RestFormDataClient
 
     }
 
-    private PwmHttpClient getHttpClient( final DomainConfig domainConfig )
+    private PwmHttpClient getHttpClient(
+            final DomainConfig domainConfig
+    )
             throws PwmUnrecoverableException
     {
 
@@ -145,7 +147,7 @@ public class RestFormDataClient
                 .trustManagerType( PwmHttpClientConfiguration.TrustManagerType.configuredCertificates )
                 .certificates( certificates )
                 .build();
-        return pwmDomain.getHttpClientService().getPwmHttpClient( pwmHttpClientConfiguration );
+        return pwmDomain.getHttpClientService().getPwmHttpClient( pwmHttpClientConfiguration, this.sessionLabel );
     }
 
 }

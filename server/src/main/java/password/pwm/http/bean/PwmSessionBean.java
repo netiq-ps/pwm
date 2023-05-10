@@ -25,16 +25,15 @@ import lombok.Setter;
 import password.pwm.config.option.SessionBeanMode;
 import password.pwm.error.ErrorInformation;
 
-import java.io.Serializable;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
 @Getter
 @Setter
-public abstract class PwmSessionBean implements Serializable
+public abstract class PwmSessionBean
 {
-    public enum Type
+    public enum BeanType
     {
         PUBLIC,
         AUTHENTICATED,
@@ -50,7 +49,7 @@ public abstract class PwmSessionBean implements Serializable
     private Instant timestamp;
     private ErrorInformation lastError;
 
-    public abstract Type getType( );
+    public abstract BeanType getBeanType( );
 
     public abstract Set<SessionBeanMode> supportedModes( );
 

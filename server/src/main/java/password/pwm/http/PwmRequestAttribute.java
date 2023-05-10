@@ -48,6 +48,8 @@ public enum PwmRequestAttribute
     AccountInfo,
 
     SetupResponses_ResponseInfo,
+    SetupResponses_ChallengeSet,
+    SetupResponses_SetupData,
     SetupResponses_AllowSkip,
 
     SetupOtp_QrCodeValue,
@@ -77,7 +79,6 @@ public enum PwmRequestAttribute
 
     ChangePassword_MaxWaitSeconds,
     ChangePassword_CheckIntervalSeconds,
-    ChangePassword_PasswordPolicyChangeMessage,
 
     ForgottenPasswordChallengeSet,
     ForgottenPasswordOptionalPageView,
@@ -87,6 +88,7 @@ public enum PwmRequestAttribute
 
     GuestCurrentExpirationDate,
     GuestMaximumExpirationDate,
+    GuestMinimumExpirationDate,
     GuestMaximumValidDays,
 
     NewUser_FormShowBackButton,
@@ -104,6 +106,9 @@ public enum PwmRequestAttribute
     TokenDestItems,
     ExternalResponsePrompts,
     ExternalResponseInstructions,
+
+    JspIndexTabCounter,
+    JspAutofocusStatus,
 
     GoBackAction,;
 }

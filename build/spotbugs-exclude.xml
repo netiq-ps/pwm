@@ -43,4 +43,44 @@
         <!-- overly aggressive check added in 4.4.1 -->
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <Match>
+        <!-- triggered by lombok hashcode autogen -->
+        <Method name="hashCode" />
+        <Bug pattern="USBR_UNNECESSARY_STORE_BEFORE_RETURN" />
+    </Match>
+    <Match>
+        <!-- triggered by lombok equals autogen -->
+        <Method name="equals" />
+        <Bug pattern="CC_CYCLOMATIC_COMPLEXITY" />
+    </Match>
+    <Match>
+        <!-- overly aggressive suggestion -->
+        <Bug pattern="SE_COMPARATOR_SHOULD_BE_SERIALIZABLE"/>
+    </Match>
+    <Match>
+        <!-- triggered by lombok @Data autogen -->
+        <Bug pattern="FCCD_FIND_CLASS_CIRCULAR_DEPENDENCY" />
+    </Match>
+    <Match>
+        <!-- triggered by lombok @Builder autogen -->
+        <Bug pattern="MRC_METHOD_RETURNS_CONSTANT" />
+    </Match>
+
+    <Match>
+        <!-- issue with spotbugs 4.7.0 -->
+        <!-- https://github.com/spotbugs/spotbugs/issues/2040 -->
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION" />
+    </Match>
+
+
+    <!-- jsp exclusions -->
+    <Match>
+        <Or>
+            <Class name="~^jsp\..*_jsp$" />
+        </Or>
+        <!-- pretty much every line in jsp throws throwable :) -->
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_THROWABLE" />
+
+    </Match>
+
 </FindBugsFilter>

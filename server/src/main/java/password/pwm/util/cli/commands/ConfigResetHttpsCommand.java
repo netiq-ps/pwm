@@ -24,23 +24,27 @@ import password.pwm.bean.DomainID;
 import password.pwm.bean.SessionLabel;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.PwmSettingCategory;
-import password.pwm.config.stored.ConfigurationReader;
+import password.pwm.config.stored.ConfigurationFileManager;
 import password.pwm.config.stored.StoredConfigKey;
 import password.pwm.config.stored.StoredConfiguration;
 import password.pwm.config.stored.StoredConfigurationModifier;
+import password.pwm.error.PwmOperationalException;
+import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.util.cli.CliParameters;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 public class ConfigResetHttpsCommand
         extends AbstractCliCommand
 {
     @Override
     public void doCommand( )
-            throws Exception
+            throws IOException, PwmUnrecoverableException, PwmOperationalException
     {
-        final File configurationFile = cliEnvironment.getConfigurationFile();
-        if ( configurationFile == null || !configurationFile.exists() )
+        final Path configurationFile = cliEnvironment.getConfigurationFile();
+        if ( configurationFile == null || !Files.exists( configurationFile ) )
         {
             out( "configuration file is not present" );
             return;
@@ -51,8 +55,10 @@ public class ConfigResetHttpsCommand
             return;
         }
 
-        final ConfigurationReader configurationReader = new ConfigurationReader( cliEnvironment.getConfigurationFile() );
-        final StoredConfiguration storedConfiguration = configurationReader.getStoredConfiguration();
+        final ConfigurationFileManager configurationFileManager = new ConfigurationFileManager(
+                cliEnvironment.getConfigurationFile(),
+                SessionLabel.CLI_SESSION_LABEL );
+        final StoredConfiguration storedConfiguration = configurationFileManager.getStoredConfiguration();
 
         final StoredConfigurationModifier modifier = StoredConfigurationModifier.newModifier( storedConfiguration );
         for ( final PwmSetting setting : PwmSettingCategory.HTTPS_SERVER.getSettings() )
@@ -60,7 +66,7 @@ public class ConfigResetHttpsCommand
             final StoredConfigKey key = StoredConfigKey.forSetting( setting, null, DomainID.systemId() );
             modifier.resetSetting( key, null );
         }
-        configurationReader.saveConfiguration( modifier.newStoredConfiguration(), cliEnvironment.getPwmApplication(), SessionLabel.CLI_SESSION_LABEL );
+        configurationFileManager.saveConfiguration( modifier.newStoredConfiguration(), cliEnvironment.getPwmApplication() );
         out( "success" );
     }
 

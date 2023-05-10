@@ -34,7 +34,7 @@ import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmOperationalException;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.JavaHelper;
+import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.secure.X509Utils;
@@ -136,9 +136,12 @@ public class CertificateChecker implements HealthSupplier
             final TimeDuration warnDuration
     )
     {
-        if ( certificates != null )
+        if ( certificates == null )
         {
-            final List<HealthRecord> returnList = new ArrayList<>();
+            return Collections.emptyList();
+        }
+
+            final List<HealthRecord> returnList = new ArrayList<>( certificates.size() );
             for ( final X509Certificate certificate : certificates )
             {
                 try
@@ -152,15 +155,13 @@ public class CertificateChecker implements HealthSupplier
                     final HealthRecord record = HealthRecord.forMessage(
                             storedConfigKey.getDomainID(),
                             HealthMessage.Config_Certificate,
-                            storedConfigKey.toPwmSetting().toMenuLocationDebug( storedConfigKey.getProfileID(), PwmConstants.DEFAULT_LOCALE ),
+                            storedConfigKey.toPwmSetting().toMenuLocationDebug( storedConfigKey.getProfileID().orElse( null ), PwmConstants.DEFAULT_LOCALE ),
                             errorDetail
                     );
                     returnList.add( record );
                 }
             }
             return Collections.unmodifiableList( returnList );
-        }
-        return Collections.emptyList();
     }
 
     public static void checkCertificate( final X509Certificate certificate, final TimeDuration warnDuration )
@@ -195,7 +196,7 @@ public class CertificateChecker implements HealthSupplier
             if ( issueDate.isAfter( Instant.now() ) )
             {
                 final String errorMsg = "certificate " + X509Utils.makeDebugText( certificate )
-                        + " issue date of '" + JavaHelper.toIsoDate( issueDate ) + "' "
+                        + " issue date of '" + StringUtil.toIsoDate( issueDate ) + "' "
                         + " is prior to current time.";
 
                 final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_CERTIFICATE_ERROR, errorMsg, new String[]
@@ -216,7 +217,7 @@ public class CertificateChecker implements HealthSupplier
                 errorMsg.append( "certificate for subject " );
                 errorMsg.append( certificate.getSubjectDN().getName() );
                 errorMsg.append( " will expire on: " );
-                errorMsg.append( JavaHelper.toIsoDate( expireDate ) );
+                errorMsg.append( StringUtil.toIsoDate( expireDate ) );
                 errorMsg.append( " (" ).append( durationUntilExpire.asCompactString() ).append( " from now)" );
                 final ErrorInformation errorInformation = new ErrorInformation( PwmError.ERROR_CERTIFICATE_ERROR, errorMsg.toString(), new String[]
                         {

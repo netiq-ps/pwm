@@ -57,6 +57,12 @@ public class LogoutServlet extends ControlledPwmServlet
 {
     private static final PwmLogger LOGGER = PwmLogger.forClass( LogoutServlet.class );
 
+    @Override
+    protected PwmLogger getLogger()
+    {
+        return LOGGER;
+    }
+
     private static final String PARAM_URL = "url";
     private static final String PARAM_IDLE = "idle";
     private static final String PARAM_PASSWORD_MODIFIED = "passwordModified";
@@ -76,9 +82,9 @@ public class LogoutServlet extends ControlledPwmServlet
     }
 
     @Override
-    public Class<? extends ProcessAction> getProcessActionsClass( )
+    public Optional<Class<? extends ProcessAction>> getProcessActionsClass( )
     {
-        return LogoutAction.class;
+        return Optional.of( LogoutAction.class );
     }
 
     @ActionHandler( action = "showLogout" )
@@ -131,7 +137,7 @@ public class LogoutServlet extends ControlledPwmServlet
         final PwmSession pwmSession = pwmRequest.getPwmSession();
         final PwmDomain pwmDomain = pwmRequest.getPwmDomain();
 
-        pwmSession.unauthenticateUser( pwmRequest );
+        pwmSession.unAuthenticateUser( pwmRequest );
 
         {
             //if there is a session url, then use that to do a redirect.
@@ -214,10 +220,12 @@ public class LogoutServlet extends ControlledPwmServlet
 
             final String urlParameter = pwmRequest.readParameterAsString( PARAM_URL );
             final URI uri = URI.create( urlParameter );
+            final String basePath = pwmRequest.getBasePath();
+
             String path = uri.getPath();
-            if ( path != null && path.startsWith( pwmRequest.getBasePath() ) )
+            if ( path != null && path.startsWith( basePath ) )
             {
-                path = path.substring( pwmRequest.getBasePath().length() );
+                path = path.substring( basePath.length() );
 
             }
             PwmServletDefinition matchedServlet = null;
@@ -243,8 +251,8 @@ public class LogoutServlet extends ControlledPwmServlet
             if ( matchedServlet != null )
             {
                 final PwmServletDefinition finalMatchedServlet = matchedServlet;
-                LOGGER.trace( pwmRequest, () -> "matched next url to servlet definition " + finalMatchedServlet.toString() );
-                return Optional.of( pwmRequest.getBasePath() + matchedServlet.servletUrl() );
+                LOGGER.trace( pwmRequest, () -> "matched next url to servlet definition " + finalMatchedServlet );
+                return Optional.of( basePath + matchedServlet.servletUrl() );
             }
             else
             {

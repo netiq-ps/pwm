@@ -35,6 +35,7 @@ import password.pwm.AppProperty;
 import password.pwm.PwmApplication;
 import password.pwm.PwmDomain;
 import password.pwm.bean.DomainID;
+import password.pwm.bean.ProfileID;
 import password.pwm.bean.ResponseInfoBean;
 import password.pwm.bean.SessionLabel;
 import password.pwm.bean.UserIdentity;
@@ -42,13 +43,15 @@ import password.pwm.config.DomainConfig;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.option.DataStorageMethod;
 import password.pwm.config.profile.ChallengeProfile;
+import password.pwm.config.profile.ProfileDefinition;
+import password.pwm.config.profile.ProfileUtility;
 import password.pwm.config.profile.PwmPasswordPolicy;
+import password.pwm.config.profile.SetupResponsesProfile;
 import password.pwm.config.value.data.UserPermission;
 import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmDataValidationException;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmException;
-import password.pwm.error.PwmOperationalException;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.health.HealthRecord;
 import password.pwm.ldap.LdapOperationsHelper;
@@ -57,13 +60,14 @@ import password.pwm.svc.AbstractPwmService;
 import password.pwm.svc.PwmService;
 import password.pwm.svc.wordlist.WordlistService;
 import password.pwm.util.java.CollectionUtil;
-import password.pwm.util.java.JsonUtil;
 import password.pwm.util.java.StringUtil;
 import password.pwm.util.java.TimeDuration;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -102,7 +106,7 @@ public class CrService extends AbstractPwmService implements PwmService
     }
 
     @Override
-    public void close( )
+    public void shutdownImpl( )
     {
         for ( final CrOperator operator : operatorMap.values() )
         {
@@ -126,6 +130,8 @@ public class CrService extends AbstractPwmService implements PwmService
     )
             throws PwmUnrecoverableException
     {
+        checkOpenStatus();
+
         final DomainConfig config = pwmDomain.getConfig();
         final long methodStartTime = System.currentTimeMillis();
 
@@ -153,13 +159,8 @@ public class CrService extends AbstractPwmService implements PwmService
                     }
                     else
                     {
-                        final ChallengeSet finalReturnSet = returnSet;
-                        LOGGER.debug( sessionLabel, () -> "using nmas c/r policy for user " + theUser.getEntryDN() + ": " + finalReturnSet.toString() );
-
-                        final String challengeID = "nmasPolicy-" + userIdentity.toDelimitedKey();
-
                         final ChallengeProfile challengeProfile = ChallengeProfile.createChallengeProfile(
-                                challengeID,
+                                ProfileID.PROFILE_ID_NMAS,
                                 locale,
                                 applyPwmPolicyToNmasChallenges( returnSet, config ),
                                 null,
@@ -167,10 +168,33 @@ public class CrService extends AbstractPwmService implements PwmService
                                 0
                         );
 
-                        LOGGER.debug( sessionLabel, () -> "using ldap c/r policy for user " + theUser.getEntryDN() + ": "
-                                + finalReturnSet.toString() );
-                        LOGGER.trace( sessionLabel, () -> "readUserChallengeProfile completed, result=" + JsonUtil.serialize( challengeProfile ),
-                                () -> TimeDuration.fromCurrent( methodStartTime ) );
+                        {
+                            final Optional<ChallengeSet> challengeSet = challengeProfile.getChallengeSet();
+                            if ( challengeSet.isPresent() )
+                            {
+                                LOGGER.debug( sessionLabel, () -> "using nmas ldap c/r policy for user " + theUser.getEntryDN() + ": "
+                                        + JsonFactory.get().serialize( challengeSet.get().asChallengeSetBean() ) );
+                            }
+                            else
+                            {
+                                LOGGER.debug( sessionLabel, () -> "nmas ldap c/r policy for user is empty" );
+                            }
+                        }
+                        {
+                            final Optional<ChallengeSet> challengeSet = challengeProfile.getHelpdeskChallengeSet();
+                            if ( challengeSet.isPresent() )
+                            {
+                                LOGGER.debug( sessionLabel, () -> "using nmas ldap c/r helpdesk policy for user " + theUser.getEntryDN() + ": "
+                                        + JsonFactory.get().serialize( challengeSet.get().asChallengeSetBean() ) );
+                            }
+                            else
+                            {
+                                LOGGER.debug( sessionLabel, () -> "nmas ldap c/r helpdesk policy for user is empty" );
+                            }
+                        }
+
+                        LOGGER.trace( sessionLabel, () -> "readUserChallengeProfile completed",
+                                TimeDuration.fromCurrent( methodStartTime ) );
 
                         return challengeProfile;
                     }
@@ -184,19 +208,20 @@ public class CrService extends AbstractPwmService implements PwmService
         }
 
         // use PWM policies if PWM is configured and either its all that is configured OR the NMAS policy read was not successful
-        final String challengeProfileID = determineChallengeProfileForUser( pwmDomain, sessionLabel, userIdentity, locale );
+        final ProfileID challengeProfileID = determineChallengeProfileForUser( pwmDomain, sessionLabel, userIdentity, locale );
         final ChallengeProfile challengeProfile = config.getChallengeProfile( challengeProfileID, locale );
 
         LOGGER.trace( sessionLabel, () -> "readUserChallengeProfile completed in " + TimeDuration.fromCurrent( methodStartTime ).asCompactString() + " returned profile: "
-                + ( challengeProfile == null ? "null" : challengeProfile.getIdentifier() ) );
+                + ( challengeProfile == null ? "null" : challengeProfile.getId() ) );
         return challengeProfile;
     }
 
     private static ChallengeSet applyPwmPolicyToNmasChallenges( final ChallengeSet challengeSet, final DomainConfig domainConfig ) throws PwmUnrecoverableException
     {
-        final List<Challenge> newChallenges = new ArrayList<>();
         final boolean applyWordlist = domainConfig.readSettingAsBoolean( PwmSetting.EDIRECTORY_CR_APPLY_WORDLIST );
         final int questionsInAnswer = ( int ) domainConfig.readSettingAsLong( PwmSetting.EDIRECTORY_CR_MAX_QUESTION_CHARS_IN__ANSWER );
+
+        final List<Challenge> newChallenges = new ArrayList<>( challengeSet.getChallenges().size() );
         for ( final Challenge challenge : challengeSet.getChallenges() )
         {
             newChallenges.add( new ChaiChallenge(
@@ -228,7 +253,7 @@ public class CrService extends AbstractPwmService implements PwmService
     }
 
 
-    protected static String determineChallengeProfileForUser(
+    protected static ProfileID determineChallengeProfileForUser(
             final PwmDomain pwmDomain,
             final SessionLabel sessionLabel,
             final UserIdentity userIdentity,
@@ -236,13 +261,13 @@ public class CrService extends AbstractPwmService implements PwmService
     )
             throws PwmUnrecoverableException
     {
-        final List<String> profiles = pwmDomain.getConfig().getChallengeProfileIDs();
+        final List<ProfileID> profiles = pwmDomain.getConfig().getChallengeProfileIDs();
         if ( profiles.isEmpty() )
         {
             throw new PwmUnrecoverableException( new ErrorInformation( PwmError.ERROR_NO_PROFILE_ASSIGNED, "no challenge profile is configured" ) );
         }
 
-        for ( final String profile : profiles )
+        for ( final ProfileID profile : profiles )
         {
             final ChallengeProfile loopPolicy = pwmDomain.getConfig().getChallengeProfile( profile, locale );
             final List<UserPermission> queryMatch = loopPolicy.getUserPermissions();
@@ -275,6 +300,8 @@ public class CrService extends AbstractPwmService implements PwmService
     )
             throws PwmDataValidationException, PwmUnrecoverableException
     {
+        checkOpenStatus();
+
         //strip null keys from responseMap;
         responseMap.keySet().removeIf( Objects::isNull );
 
@@ -333,7 +360,6 @@ public class CrService extends AbstractPwmService implements PwmService
                 }
             }
         }
-
     }
 
     private void checkResponsesAgainstWordlist( final Map<Challenge, String> responseMap )
@@ -405,6 +431,8 @@ public class CrService extends AbstractPwmService implements PwmService
     )
             throws ChaiUnavailableException, PwmUnrecoverableException
     {
+        checkOpenStatus();
+
         final DomainConfig config = pwmDomain.getConfig();
 
         LOGGER.trace( sessionLabel, () -> "beginning read of user response sequence" );
@@ -412,18 +440,10 @@ public class CrService extends AbstractPwmService implements PwmService
         final List<DataStorageMethod> readPreferences = config.getCrReadPreference();
 
         final String debugMsg = "will attempt to read the following storage methods: "
-                + JsonUtil.serializeCollection( readPreferences ) + " for response info for user " + theUser.getEntryDN();
+                + JsonFactory.get().serializeCollection( readPreferences ) + " for response info for user " + theUser.getEntryDN();
         LOGGER.debug( sessionLabel, () -> debugMsg );
 
-        final String userGUID;
-        if ( readPreferences.contains( DataStorageMethod.DB ) || readPreferences.contains( DataStorageMethod.LOCALDB ) )
-        {
-            userGUID = LdapOperationsHelper.readLdapGuidValue( pwmDomain, sessionLabel, userIdentity, false );
-        }
-        else
-        {
-            userGUID = null;
-        }
+        final String userGUID = readUserGuidIfNeeded( userIdentity, sessionLabel, readPreferences );
 
         for ( final DataStorageMethod storageMethod : readPreferences )
         {
@@ -446,13 +466,28 @@ public class CrService extends AbstractPwmService implements PwmService
         return Optional.empty();
     }
 
+    private String readUserGuidIfNeeded(
+            final UserIdentity userIdentity,
+            final SessionLabel sessionLabel,
+            final List<DataStorageMethod> storageMethods
+    )
+            throws PwmUnrecoverableException
+    {
+        /* only some storage methods require user guid, for others we can safely have a null */
+        if ( storageMethods.contains( DataStorageMethod.DB ) || storageMethods.contains( DataStorageMethod.LOCALDB ) )
+        {
+            return LdapOperationsHelper.readLdapGuidValue( pwmDomain, sessionLabel, userIdentity )
+                    .orElseThrow( () -> PwmUnrecoverableException.newException( PwmError.ERROR_MISSING_GUID ) );
+        }
+        return null;
+    }
 
     public Optional<ResponseSet> readUserResponseSet(
             final SessionLabel sessionLabel,
             final UserIdentity userIdentity,
             final ChaiUser theUser
     )
-            throws ChaiUnavailableException, PwmUnrecoverableException
+            throws PwmUnrecoverableException
     {
         final DomainConfig config = pwmDomain.getConfig();
 
@@ -461,17 +496,9 @@ public class CrService extends AbstractPwmService implements PwmService
         final List<DataStorageMethod> readPreferences = config.getCrReadPreference();
 
         LOGGER.debug( sessionLabel, () -> "will attempt to read the following storage methods: "
-                + JsonUtil.serializeCollection( readPreferences ) + " for user " + theUser.getEntryDN() );
+                + JsonFactory.get().serializeCollection( readPreferences ) + " for user " + theUser.getEntryDN() );
 
-        final String userGUID;
-        if ( readPreferences.contains( DataStorageMethod.DB ) || readPreferences.contains( DataStorageMethod.LOCALDB ) )
-        {
-            userGUID = LdapOperationsHelper.readLdapGuidValue( pwmDomain, sessionLabel, userIdentity, false );
-        }
-        else
-        {
-            userGUID = null;
-        }
+        final String userGUID = readUserGuidIfNeeded( userIdentity, sessionLabel, readPreferences );
 
         for ( final DataStorageMethod storageMethod : readPreferences )
         {
@@ -499,12 +526,10 @@ public class CrService extends AbstractPwmService implements PwmService
             final SessionLabel sessionLabel,
             final UserIdentity userIdentity,
             final ChaiUser theUser,
-            final String userGUID,
             final ResponseInfoBean responseInfoBean
     )
-            throws PwmOperationalException, ChaiUnavailableException, ChaiValidationException
+            throws PwmUnrecoverableException
     {
-
         int attempts = 0;
         int successes = 0;
         final Map<DataStorageMethod, String> errorMessages = new LinkedHashMap<>();
@@ -512,8 +537,9 @@ public class CrService extends AbstractPwmService implements PwmService
         final List<DataStorageMethod> writeMethods = pwmDomain.getConfig().getCrWritePreference( );
 
         LOGGER.debug( sessionLabel, () -> "will attempt to write the following storage methods: "
-                + JsonUtil.serializeCollection( writeMethods ) + " for user " + theUser.getEntryDN() );
+                + JsonFactory.get().serializeCollection( writeMethods ) + " for user " + theUser.getEntryDN() );
 
+        final String userGUID = readUserGuidIfNeeded( userIdentity, sessionLabel, writeMethods );
 
         for ( final DataStorageMethod loopWriteMethod : writeMethods )
         {
@@ -537,15 +563,23 @@ public class CrService extends AbstractPwmService implements PwmService
         {
             final String errorMsg = "no response save methods are available or configured";
             final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_WRITING_RESPONSES, errorMsg );
-            throw new PwmOperationalException( errorInfo );
+            throw new PwmUnrecoverableException( errorInfo );
+        }
+
+        if ( successes == 0 )
+        {
+            final String errorMsg = "response storage unsuccessful; attempts=" + attempts + ", successes=" + successes
+                    + ", detail=" + JsonFactory.get().serializeMap( errorMessages, DataStorageMethod.class, String.class );
+            final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_WRITING_RESPONSES, errorMsg );
+            throw new PwmUnrecoverableException( errorInfo );
         }
 
         if ( attempts != successes )
         {
             final String errorMsg = "response storage only partially successful; attempts=" + attempts + ", successes=" + successes
-                    + ", detail=" + JsonUtil.serializeMap( errorMessages );
+                    + ", detail=" + JsonFactory.get().serializeMap( errorMessages, DataStorageMethod.class, String.class );
             final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_WRITING_RESPONSES, errorMsg );
-            throw new PwmOperationalException( errorInfo );
+            throw new PwmUnrecoverableException( errorInfo );
         }
     }
 
@@ -553,11 +587,10 @@ public class CrService extends AbstractPwmService implements PwmService
     public void clearResponses(
             final SessionLabel sessionLabel,
             final UserIdentity userIdentity,
-            final ChaiUser theUser,
-            final String userGUID
+            final ChaiUser theUser
 
     )
-            throws PwmOperationalException, ChaiUnavailableException
+            throws PwmUnrecoverableException
     {
         int attempts = 0;
         int successes = 0;
@@ -565,8 +598,10 @@ public class CrService extends AbstractPwmService implements PwmService
         final List<DataStorageMethod> writeMethods = pwmDomain.getConfig().getCrWritePreference();
 
         LOGGER.debug( sessionLabel, () -> "will attempt to clear the following storage methods: "
-                + JsonUtil.serializeCollection( writeMethods ) + " for user " + theUser.getEntryDN()
-                + theUser.getEntryDN() + " guid=" + userGUID );
+                + JsonFactory.get().serializeCollection( writeMethods ) + " for user " + theUser.getEntryDN()
+                + theUser.getEntryDN() );
+
+        final String userGUID = readUserGuidIfNeeded( userIdentity, sessionLabel, writeMethods );
 
         for ( final DataStorageMethod loopWriteMethod : writeMethods )
         {
@@ -587,7 +622,7 @@ public class CrService extends AbstractPwmService implements PwmService
         {
             final String errorMsg = "no response save methods are available or configured";
             final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_CLEARING_RESPONSES, errorMsg );
-            throw new PwmOperationalException( errorInfo );
+            throw new PwmUnrecoverableException( errorInfo );
         }
 
         if ( attempts != successes )
@@ -595,51 +630,61 @@ public class CrService extends AbstractPwmService implements PwmService
             // should be impossible to read here, but just in case.
             final String errorMsg = "response clear partially successful; attempts=" + attempts + ", successes=" + successes;
             final ErrorInformation errorInfo = new ErrorInformation( PwmError.ERROR_CLEARING_RESPONSES, errorMsg );
-            throw new PwmOperationalException( errorInfo );
+            throw new PwmUnrecoverableException( errorInfo );
         }
     }
 
     public boolean checkIfResponseConfigNeeded(
             final PwmDomain pwmDomain,
-            final SessionLabel pwmSession,
+            final SessionLabel sessionLabel,
             final UserIdentity userIdentity,
             final ChallengeSet challengeSet,
             final ResponseInfoBean responseInfoBean
     )
             throws ChaiUnavailableException, PwmUnrecoverableException
     {
-        LOGGER.trace( pwmSession, () -> "beginning check to determine if responses need to be configured for user" );
+        LOGGER.trace( sessionLabel, () -> "beginning check to determine if responses need to be configured for user" );
 
         final DomainConfig config = pwmDomain.getConfig();
 
-        if ( !config.readSettingAsBoolean( PwmSetting.CHALLENGE_ENABLE ) )
+        if ( !config.readSettingAsBoolean( PwmSetting.SETUP_RESPONSE_ENABLE ) )
         {
-            LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: response setup is disabled, so user is not required to setup responses" );
+            LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: response setup is disabled, so user is not required to setup responses" );
             return false;
         }
 
-        if ( !config.readSettingAsBoolean( PwmSetting.CHALLENGE_FORCE_SETUP ) )
         {
-            LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: force response setup is disabled, so user is not required to setup responses" );
-            return false;
-        }
+            final Optional<ProfileID> profileId = ProfileUtility.discoverProfileIDForUser( pwmDomain, sessionLabel, userIdentity, ProfileDefinition.SetupResponsesProfile );
+            if ( profileId.isPresent() )
+            {
+                final SetupResponsesProfile setupResponsesProfile = pwmDomain.getConfig().getSetupResponseProfiles().get( profileId.get() );
+                if ( setupResponsesProfile != null )
+                {
+                    if ( !setupResponsesProfile.readSettingAsBoolean( PwmSetting.SETUP_RESPONSES_FORCE_SETUP ) )
+                    {
+                        LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: force response setup is disabled, so user is not required to setup responses" );
+                        return false;
+                    }
 
-        if ( !UserPermissionUtility.testUserPermission( pwmDomain, pwmSession, userIdentity, config.readSettingAsUserPermission( PwmSetting.QUERY_MATCH_SETUP_RESPONSE ) ) )
-        {
-            LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: " + userIdentity + " does not have permission to setup responses" );
-            return false;
-        }
-
-        if ( !UserPermissionUtility.testUserPermission( pwmDomain, pwmSession, userIdentity, config.readSettingAsUserPermission( PwmSetting.QUERY_MATCH_CHECK_RESPONSES ) ) )
-        {
-            LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: " + userIdentity + " is not eligible for checkIfResponseConfigNeeded due to query match" );
-            return false;
+                    if ( !UserPermissionUtility.testUserPermission( pwmDomain, sessionLabel, userIdentity,
+                            setupResponsesProfile.readSettingAsUserPermission( PwmSetting.QUERY_MATCH_CHECK_RESPONSES ) ) )
+                    {
+                        LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: " + userIdentity + " is not eligible for checkIfResponseConfigNeeded due to query match" );
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: " + userIdentity + " does not have permission to setup responses" );
+                return false;
+            }
         }
 
         // check to be sure there are actually challenges in the challenge set
         if ( challengeSet == null || challengeSet.getChallenges().isEmpty() )
         {
-            LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: no challenge sets configured for user " + userIdentity );
+            LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: no challenge sets configured for user " + userIdentity );
             return false;
         }
 
@@ -649,7 +694,7 @@ public class CrService extends AbstractPwmService implements PwmService
             final boolean ignoreNmasCr = Boolean.parseBoolean( pwmDomain.getConfig().readAppProperty( AppProperty.NMAS_IGNORE_NMASCR_DURING_FORCECHECK ) );
             if ( ignoreNmasCr )
             {
-                LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: app property " + AppProperty.NMAS_IGNORE_NMASCR_DURING_FORCECHECK.getKey()
+                LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: app property " + AppProperty.NMAS_IGNORE_NMASCR_DURING_FORCECHECK.getKey()
                         + "=true and user's responses are in " + responseInfoBean.getDataStorageMethod() + " format, so forcing setup of new responses." );
                 return true;
             }
@@ -665,13 +710,12 @@ public class CrService extends AbstractPwmService implements PwmService
 
             // check if responses meet the challenge set policy for the user
             //usersResponses.meetsChallengeSetRequirements(challengeSet);
-
-            LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: " + userIdentity + " has good responses" );
+            LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: " + userIdentity + " has good responses" );
             return false;
         }
         catch ( final Exception e )
         {
-            LOGGER.debug( pwmSession, () -> "checkIfResponseConfigNeeded: " + userIdentity + " does not have good responses: " + e.getMessage() );
+            LOGGER.debug( sessionLabel, () -> "checkIfResponseConfigNeeded: " + userIdentity + " does not have good responses: " + e.getMessage() );
             return true;
         }
     }
@@ -684,5 +728,10 @@ public class CrService extends AbstractPwmService implements PwmService
                 .collect( Collectors.toSet() );
 
         return ServiceInfoBean.builder().storageMethods( usedStorageMethods ).build();
+    }
+
+    protected Set<PwmApplication.Condition> openConditions()
+    {
+        return EnumSet.noneOf( PwmApplication.Condition.class );
     }
 }

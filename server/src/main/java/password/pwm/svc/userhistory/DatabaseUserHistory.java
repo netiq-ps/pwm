@@ -27,18 +27,17 @@ import password.pwm.error.ErrorInformation;
 import password.pwm.error.PwmError;
 import password.pwm.error.PwmUnrecoverableException;
 import password.pwm.ldap.LdapOperationsHelper;
-import password.pwm.ldap.UserInfo;
-import password.pwm.svc.event.AuditEventType;
-import password.pwm.svc.event.HelpdeskAuditRecord;
-import password.pwm.svc.event.UserAuditRecord;
 import password.pwm.svc.db.DatabaseException;
 import password.pwm.svc.db.DatabaseService;
 import password.pwm.svc.db.DatabaseTable;
-import password.pwm.util.java.JsonUtil;
+import password.pwm.svc.event.AuditEventType;
+import password.pwm.svc.event.HelpdeskAuditRecord;
+import password.pwm.svc.event.UserAuditRecord;
+import password.pwm.user.UserInfo;
+import password.pwm.util.java.CollectionUtil;
+import password.pwm.util.json.JsonFactory;
 import password.pwm.util.logging.PwmLogger;
 
-import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -72,13 +71,14 @@ class DatabaseUserHistory implements UserHistoryStore
             userIdentity = UserIdentity.create( auditRecord.getPerpetratorDN(), auditRecord.getPerpetratorLdapProfile(), auditRecord.getDomain() );
         }
 
-        final String guid = LdapOperationsHelper.readLdapGuidValue( pwmDomain, null, userIdentity, false );
+        final String guid = LdapOperationsHelper.readLdapGuidValue( pwmDomain, sessionLabel, userIdentity )
+                .orElseThrow( () -> PwmUnrecoverableException.newException( PwmError.ERROR_MISSING_GUID ) );
 
         try
         {
             final StoredHistory storedHistory;
             storedHistory = readStoredHistory( guid );
-            storedHistory.getRecords().add( auditRecord );
+            storedHistory.records().add( auditRecord );
             writeStoredHistory( guid, storedHistory );
         }
         catch ( final DatabaseException e )
@@ -93,7 +93,7 @@ class DatabaseUserHistory implements UserHistoryStore
         final String userGuid = userInfo.getUserGuid();
         try
         {
-            return readStoredHistory( userGuid ).getRecords();
+            return readStoredHistory( userGuid ).records();
         }
         catch ( final DatabaseException e )
         {
@@ -106,9 +106,9 @@ class DatabaseUserHistory implements UserHistoryStore
         final Optional<String> str = this.databaseService.getAccessor().get( TABLE, guid );
         if ( str.isEmpty() )
         {
-            return new StoredHistory();
+            return new StoredHistory( List.of() );
         }
-        return JsonUtil.deserialize( str.get(), StoredHistory.class );
+        return JsonFactory.get().deserialize( str.get(), StoredHistory.class );
     }
 
     private void writeStoredHistory( final String guid, final StoredHistory storedHistory ) throws DatabaseException, PwmUnrecoverableException
@@ -117,22 +117,17 @@ class DatabaseUserHistory implements UserHistoryStore
         {
             return;
         }
-        final String str = JsonUtil.serialize( storedHistory );
+        final String str = JsonFactory.get().serialize( storedHistory );
         databaseService.getAccessor().put( TABLE, guid, str );
     }
 
-    static class StoredHistory implements Serializable
+    record StoredHistory(
+            List<UserAuditRecord> records
+    )
     {
-        private List<UserAuditRecord> records = new ArrayList<>();
-
-        List<UserAuditRecord> getRecords( )
+        StoredHistory
         {
-            return records;
-        }
-
-        void setRecords( final List<UserAuditRecord> records )
-        {
-            this.records = records;
+            records = CollectionUtil.stripNulls( records );
         }
     }
 }

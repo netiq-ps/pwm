@@ -20,12 +20,10 @@
 
 package password.pwm.svc.stats;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import password.pwm.util.java.JavaHelper;
-import password.pwm.util.java.JsonUtil;
 import password.pwm.util.java.StringUtil;
+import password.pwm.util.json.JsonFactory;
 
-import java.io.Serializable;
 import java.math.BigInteger;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -68,16 +66,16 @@ public class StatisticsBundle
             final AverageBean averageBean = avgMap.get( epsStatistic );
             if ( !averageBean.isZero() )
             {
-                outputMap.put( epsStatistic.name(), JsonUtil.serialize( averageBean ) );
+                outputMap.put( epsStatistic.name(), JsonFactory.get().serialize( averageBean ) );
             }
         }
 
-        return JsonUtil.serializeMap( outputMap );
+        return JsonFactory.get().serializeMap( outputMap );
     }
 
     public static StatisticsBundle input( final String inputString )
     {
-        final Map<String, String> loadedMap = JsonUtil.deserializeStringMap( inputString );
+        final Map<String, String> loadedMap = JsonFactory.get().deserializeStringMap( inputString );
         final StatisticsBundle bundle = new StatisticsBundle();
 
         for ( final Statistic loopStat : Statistic.values() )
@@ -97,7 +95,7 @@ public class StatisticsBundle
             final String value = loadedMap.get( loopStat.name() );
             if ( StringUtil.notEmpty( value ) )
             {
-                final AverageBean avgBean = JsonUtil.deserialize( value, AverageBean.class );
+                final AverageBean avgBean = JsonFactory.get().deserialize( value, AverageBean.class );
                 bundle.avgMap.put( loopStat, avgBean );
             }
         }
@@ -125,14 +123,11 @@ public class StatisticsBundle
         return avgMap.get( statistic ).getAverage().toString();
     }
 
-    private static class AverageBean implements Serializable
+    private static class AverageBean
     {
-        private static final long serialVersionUID = 1L;
-
         private BigInteger total = BigInteger.ZERO;
         private BigInteger count = BigInteger.ZERO;
 
-        @SuppressFBWarnings( "SE_TRANSIENT_FIELD_NOT_RESTORED" )
         private final transient Lock lock = new ReentrantLock();
 
         AverageBean( )
