@@ -20,39 +20,31 @@
 
 package password.pwm.svc.db;
 
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Value;
 import password.pwm.AppProperty;
 import password.pwm.config.AppConfig;
 import password.pwm.config.PwmSetting;
 import password.pwm.config.value.FileValue;
 import password.pwm.data.ImmutableByteArray;
 import password.pwm.util.PasswordData;
-import password.pwm.util.java.CollectionUtil;
 
-import java.util.Arrays;
 import java.util.Map;
-import java.util.Set;
 
-@Value
-@AllArgsConstructor( access = AccessLevel.PRIVATE )
-public class DBConfiguration
+public record DBConfiguration(
+        String driverClassname,
+        String connectionString,
+        String username,
+        PasswordData password,
+        String columnTypeKey,
+        String columnTypeValue,
+        ImmutableByteArray jdbcDriver,
+        int maxConnections,
+        int connectionTimeout,
+        int keyColumnLength,
+        boolean failOnIndexCreation,
+        boolean traceLogging
+)
 {
-    private final String driverClassname;
-    private final String connectionString;
-    private final String username;
-    private final PasswordData password;
-    private final String columnTypeKey;
-    private final String columnTypeValue;
-    private final ImmutableByteArray jdbcDriver;
-    private final Set<JDBCDriverLoader.ClassLoaderStrategy> classLoaderStrategies;
-    private final int maxConnections;
-    private final int connectionTimeout;
-    private final int keyColumnLength;
-    private final boolean failOnIndexCreation;
-
-    public ImmutableByteArray getJdbcDriver( )
+    public ImmutableByteArray getJdbcDriver()
     {
         return jdbcDriver;
     }
@@ -72,12 +64,6 @@ public class DBConfiguration
             jdbcDriverBytes = null;
         }
 
-        final String strategyList = config.readAppProperty( AppProperty.DB_JDBC_LOAD_STRATEGY );
-        final Set<JDBCDriverLoader.ClassLoaderStrategy> strategies = CollectionUtil.readEnumSetFromStringCollection(
-                JDBCDriverLoader.ClassLoaderStrategy.class,
-                Arrays.asList( strategyList.split( "," ) )
-        );
-
         final int maxConnections = Integer.parseInt( config.readAppProperty( AppProperty.DB_CONNECTIONS_MAX ) );
         final int connectionTimeout = Integer.parseInt( config.readAppProperty( AppProperty.DB_CONNECTIONS_TIMEOUT_MS ) );
 
@@ -93,11 +79,11 @@ public class DBConfiguration
                 config.readSettingAsString( PwmSetting.DATABASE_COLUMN_TYPE_KEY ),
                 config.readSettingAsString( PwmSetting.DATABASE_COLUMN_TYPE_VALUE ),
                 jdbcDriverBytes,
-                strategies,
                 maxConnections,
                 connectionTimeout,
                 keyColumnLength,
-                haltOnIndexCreateError
+                haltOnIndexCreateError,
+                config.readSettingAsBoolean( PwmSetting.DATABASE_DEBUG_TRACE )
         );
     }
 }

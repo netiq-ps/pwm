@@ -45,6 +45,7 @@
 <!DOCTYPE html>
 <%@ page language="java" session="true" isThreadSafe="true" contentType="text/html" %>
 <%@ taglib uri="pwm" prefix="pwm" %>
+<% JspUtility.setFlag(pageContext, PwmRequestFlag.INCLUDE_DOJO); %>
 <% final AppDashboardData appDashboardData = (AppDashboardData)JspUtility.getAttribute(pageContext, PwmRequestAttribute.AppDashboardData); %>
 <% final PwmRequest dashboard_pwmRequest = JspUtility.getPwmRequest(pageContext); %>
 <% final PwmDomain dashboard_pwmDomain = dashboard_pwmRequest.getPwmDomain(); %>
@@ -227,23 +228,6 @@
                                     <% } %>
                                 </table>
                                 <% } %>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td class="key">
-                                Dojo API Version
-                            </td>
-                            <td>
-                                <span id="dojoVersionSpan"></span>
-                                <pwm:script>
-                                    <script type="text/javascript">
-                                        PWM_GLOBAL['startupFunctions'].push(function(){
-                                            require(["dojo"],function(dojo){
-                                                dojo.byId('dojoVersionSpan').innerHTML = dojo.version;
-                                            });
-                                        });
-                                    </script>
-                                </pwm:script>
                             </td>
                         </tr>
                         <tr>

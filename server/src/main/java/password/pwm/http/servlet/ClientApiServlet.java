@@ -23,6 +23,7 @@ package password.pwm.http.servlet;
 import com.novell.ldapchai.exception.ChaiUnavailableException;
 import lombok.Data;
 import password.pwm.AppProperty;
+import password.pwm.DomainProperty;
 import password.pwm.Permission;
 import password.pwm.PwmApplicationMode;
 import password.pwm.PwmConstants;
@@ -307,8 +308,8 @@ public class ClientApiServlet extends ControlledPwmServlet
         final DomainConfig config = pwmDomain.getConfig();
         final TreeMap<String, Object> settingMap = new TreeMap<>();
 
-        settingMap.put( "client.ajaxTypingTimeout", Integer.parseInt( config.readAppProperty( AppProperty.CLIENT_AJAX_TYPING_TIMEOUT ) ) );
-        settingMap.put( "client.ajaxTypingWait", Integer.parseInt( config.readAppProperty( AppProperty.CLIENT_AJAX_TYPING_WAIT ) ) );
+        settingMap.put( "client.ajaxTypingTimeout", Integer.parseInt( config.readDomainProperty( DomainProperty.CLIENT_AJAX_TYPING_TIMEOUT ) ) );
+        settingMap.put( "client.ajaxTypingWait", Integer.parseInt( config.readDomainProperty( DomainProperty.CLIENT_AJAX_TYPING_WAIT ) ) );
         settingMap.put( "client.activityMaxEpsRate", Integer.parseInt( config.readAppProperty( AppProperty.CLIENT_ACTIVITY_MAX_EPS_RATE ) ) );
         settingMap.put( "client.locale", LocaleHelper.getBrowserLocaleString( pwmSession.getSessionStateBean().getLocale() ) );
         settingMap.put( "client.pwShowRevertTimeout", Integer.parseInt( config.readAppProperty( AppProperty.CLIENT_PW_SHOW_REVERT_TIMEOUT ) ) );
@@ -443,9 +444,13 @@ public class ClientApiServlet extends ControlledPwmServlet
         final RestStatisticsServer.OutputVersion1.JsonOutput jsonOutput = new RestStatisticsServer.OutputVersion1.JsonOutput();
         jsonOutput.EPS = RestStatisticsServer.OutputVersion1.addEpsStats( statisticsManager );
 
-        if ( statName != null && statName.length() > 0 )
+        if ( !StringUtil.isEmpty( statName ) )
         {
-            jsonOutput.nameData = RestStatisticsServer.OutputVersion1.doNameStat( statisticsManager, statName, days );
+            jsonOutput.nameData = RestStatisticsServer.OutputVersion1.doNameStat(
+                    pwmRequest.getPwmRequestContext(),
+                    statisticsManager,
+                    statName,
+                    days );
         }
         else
         {

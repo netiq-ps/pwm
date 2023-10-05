@@ -32,6 +32,7 @@ import com.novell.ldapchai.provider.ChaiProvider;
 import com.novell.ldapchai.provider.ChaiSetting;
 import com.novell.ldapchai.provider.DirectoryVendor;
 import password.pwm.AppProperty;
+import password.pwm.DomainProperty;
 import password.pwm.PwmDomain;
 import password.pwm.bean.SessionLabel;
 import password.pwm.bean.UserIdentity;
@@ -60,7 +61,6 @@ import password.pwm.util.logging.PwmLogLevel;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.password.PasswordUtility;
 import password.pwm.util.password.RandomGeneratorConfig;
-import password.pwm.util.password.RandomPasswordGenerator;
 
 import java.time.Instant;
 import java.util.Collections;
@@ -485,7 +485,7 @@ class LDAPAuthenticationRequest implements AuthenticationRequest
             // create random password for user
             final RandomGeneratorConfig randomGeneratorConfig = RandomGeneratorConfig.make( pwmDomain, passwordPolicy );
 
-            final PasswordData currentPass = RandomPasswordGenerator.createRandomPassword( sessionLabel, randomGeneratorConfig, pwmDomain );
+            final PasswordData currentPass = PasswordUtility.generateRandom( sessionLabel, randomGeneratorConfig, pwmDomain );
 
             try
             {
@@ -595,7 +595,7 @@ class LDAPAuthenticationRequest implements AuthenticationRequest
                     ORACLE_ATTR_PW_ALLOW_CHG_TIME );
             if ( oracleDSPostPasswordAllowChangeTime != null && !oracleDSPostPasswordAllowChangeTime.isEmpty() )
             {
-                final boolean postTempUseCurrentTime = Boolean.parseBoolean( pwmDomain.getConfig().readAppProperty( AppProperty.LDAP_ORACLE_POST_TEMPPW_USE_CURRENT_TIME ) );
+                final boolean postTempUseCurrentTime = Boolean.parseBoolean( pwmDomain.getConfig().readDomainProperty( DomainProperty.LDAP_ORACLE_POST_TEMPPW_USE_CURRENT_TIME ) );
                 if ( postTempUseCurrentTime )
                 {
                     log( PwmLogLevel.TRACE, () -> "a new value for passwordAllowChangeTime attribute to user "

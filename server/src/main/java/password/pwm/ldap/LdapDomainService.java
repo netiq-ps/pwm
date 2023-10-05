@@ -24,9 +24,7 @@ import com.novell.ldapchai.provider.ChaiProvider;
 import com.novell.ldapchai.provider.ChaiProviderFactory;
 import com.novell.ldapchai.provider.ChaiSetting;
 import com.novell.ldapchai.provider.ProviderStatistics;
-import lombok.Builder;
-import lombok.Value;
-import password.pwm.AppProperty;
+import password.pwm.DomainProperty;
 import password.pwm.PwmApplication;
 import password.pwm.PwmDomain;
 import password.pwm.bean.DomainID;
@@ -281,8 +279,8 @@ public class LdapDomainService extends AbstractPwmService implements PwmService
 
     private int maxSlotsPerProfile( final PwmDomain pwmDomain )
     {
-        final int maxConnections = Integer.parseInt( pwmDomain.getConfig().readAppProperty( AppProperty.LDAP_PROXY_MAX_CONNECTIONS ) );
-        final int perProfile = Integer.parseInt( pwmDomain.getConfig().readAppProperty( AppProperty.LDAP_PROXY_CONNECTION_PER_PROFILE ) );
+        final int maxConnections = Integer.parseInt( pwmDomain.getConfig().readDomainProperty( DomainProperty.LDAP_PROXY_MAX_CONNECTIONS ) );
+        final int perProfile = Integer.parseInt( pwmDomain.getConfig().readDomainProperty( DomainProperty.LDAP_PROXY_CONNECTION_PER_PROFILE ) );
         final int profileCount = pwmDomain.getConfig().getLdapProfiles().size();
 
         if ( ( perProfile * profileCount ) >= maxConnections )
@@ -338,30 +336,29 @@ public class LdapDomainService extends AbstractPwmService implements PwmService
         for ( final ChaiProvider chaiProvider : chaiProviderFactory.activeProviders() )
         {
             final String bindDN = chaiProvider.getChaiConfiguration().getSetting( ChaiSetting.BIND_DN );
-            final ConnectionInfo connectionInfo = ConnectionInfo.builder()
-                    .bindDN( bindDN )
-                    .active( chaiProvider.isConnected() )
-                    .operationCount( chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.OPERATION_COUNT ) )
-                    .modifyCount( chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.MODIFY_COUNT ) )
-                    .readCount( chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.READ_COUNT ) )
-                    .searchCount( chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.SEARCH_COUNT ) )
-                    .build();
+            final ConnectionInfo connectionInfo = new ConnectionInfo(
+                    bindDN,
+                    chaiProvider.isConnected(),
+                    chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.OPERATION_COUNT ),
+                    chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.MODIFY_COUNT ),
+                    chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.READ_COUNT ),
+                    chaiProvider.getProviderStatistics().getIncrementorStatistic( ProviderStatistics.IncrementerStatistic.SEARCH_COUNT ) );
+
 
             returnData.put( bindDN, connectionInfo );
         }
         return List.copyOf( returnData.values() );
     }
 
-    @Value
-    @Builder
-    public static class ConnectionInfo
+    public record ConnectionInfo(
+            String bindDN,
+            boolean active,
+            long operationCount,
+            long modifyCount,
+            long readCount,
+            long searchCount
+    )
     {
-        private final String bindDN;
-        private final boolean active;
-        private final long operationCount;
-        private final long modifyCount;
-        private final long readCount;
-        private final long searchCount;
     }
 
     private Map<String, String> connectionDebugInfo( )

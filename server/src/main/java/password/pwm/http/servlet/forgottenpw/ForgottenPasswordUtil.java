@@ -31,7 +31,7 @@ import com.novell.ldapchai.exception.ChaiException;
 import com.novell.ldapchai.exception.ChaiOperationException;
 import com.novell.ldapchai.exception.ChaiUnavailableException;
 import com.novell.ldapchai.exception.ChaiValidationException;
-import password.pwm.AppProperty;
+import password.pwm.DomainProperty;
 import password.pwm.PwmConstants;
 import password.pwm.PwmDomain;
 import password.pwm.bean.EmailItemBean;
@@ -76,7 +76,6 @@ import password.pwm.util.java.CollectionUtil;
 import password.pwm.util.logging.PwmLogger;
 import password.pwm.util.macro.MacroRequest;
 import password.pwm.util.password.PasswordUtility;
-import password.pwm.util.password.RandomPasswordGenerator;
 
 import javax.servlet.ServletException;
 import java.io.IOException;
@@ -229,7 +228,7 @@ public class ForgottenPasswordUtil
 
         try
         {
-            final String cookieName = pwmDomain.getConfig().readAppProperty( AppProperty.HTTP_COOKIE_AUTHRECORD_NAME );
+            final String cookieName = pwmDomain.getConfig().readDomainProperty( DomainProperty.HTTP_COOKIE_AUTHRECORD_NAME );
             if ( cookieName == null || cookieName.isEmpty() )
             {
                 LOGGER.trace( pwmRequest, () -> "skipping auth record cookie read, cookie name parameter is blank" );
@@ -465,11 +464,10 @@ public class ForgottenPasswordUtil
                     + theUser.getEntryDN() );
 
             // create new password
-            final PasswordData newPassword = RandomPasswordGenerator.createRandomPassword(
+            final PasswordData newPassword = PasswordUtility.generateRandom(
                     pwmRequest.getLabel(),
                     userInfo.getPasswordPolicy(),
-                    pwmDomain
-            );
+                    pwmDomain );
             LOGGER.trace( pwmRequest, () -> "generated random password value based on password policy for "
                     + userIdentity.toDisplayString() );
 

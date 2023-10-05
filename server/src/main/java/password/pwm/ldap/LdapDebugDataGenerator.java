@@ -59,14 +59,18 @@ public class LdapDebugDataGenerator
     )
 
     {
+        final DomainConfig nonObfuscatedDomainConf = pwmDomain.getConfig();
+
         final List<LdapDebugInfo> returnList = new ArrayList<>();
-        for ( final LdapProfile ldapProfile : domainConfig.getLdapProfiles().values() )
+        for ( final LdapProfile ldapProfile : nonObfuscatedDomainConf.getLdapProfiles().values() )
         {
             final List<LdapDebugServerInfo> ldapDebugServerInfos = new ArrayList<>();
 
             try
             {
-                final ChaiConfiguration profileChaiConf = LdapOperationsHelper.createChaiConfiguration( domainConfig, ldapProfile );
+                final ChaiConfiguration profileChaiConf = LdapOperationsHelper.createChaiConfiguration(
+                        nonObfuscatedDomainConf,
+                        ldapProfile );
                 final Collection<ChaiConfiguration> chaiConfigurations = ChaiUtility.splitConfigurationPerReplica( profileChaiConf, null );
 
                 for ( final ChaiConfiguration chaiConfiguration : chaiConfigurations )
@@ -77,7 +81,7 @@ public class LdapDebugDataGenerator
                                 pwmDomain,
                                 sessionLabel,
                                 ldapProfile,
-                                domainConfig,
+                                nonObfuscatedDomainConf,
                                 ldapProfile.readSettingAsString( PwmSetting.LDAP_PROXY_USER_DN ),
                                 ldapProfile.readSettingAsPassword( PwmSetting.LDAP_PROXY_USER_PASSWORD )
                         );
@@ -120,6 +124,7 @@ public class LdapDebugDataGenerator
         final LdapDebugServerInfo.LdapDebugServerInfoBuilder builder = LdapDebugServerInfo.builder();
 
         builder.ldapServerlUrl( chaiConfiguration.getSetting( ChaiSetting.BIND_URLS ) );
+        builder.vendorName( chaiProvider.getDirectoryVendor().name() );
         final ChaiProvider loopProvider = chaiProvider.getProviderFactory().newProvider( chaiConfiguration );
 
         {
@@ -188,6 +193,7 @@ public class LdapDebugDataGenerator
     public static class LdapDebugServerInfo
     {
         private String ldapServerlUrl;
+        private String vendorName;
         private String testUserDN;
         private Map<String, List<String>> testUserAttributes;
         private String proxyDN;
